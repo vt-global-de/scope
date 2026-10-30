@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+*.dump
+node_modules/
+npm-debug.log*
+.trivycache/
+playwright-report/
+test-results/
+config/docker-tls/

@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a focused improvement to Scope.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Operational problem
+      description: Describe the workflow or limitation that should be improved rather than only the desired UI.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain how Scope could address the problem while preserving its configuration-driven and read-first model.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Which existing Scope feature or external tool did you consider?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and the public roadmap.
+          required: true
+        - label: The request does not require Scope to become a general-purpose infrastructure management tool.
+          required: true
+

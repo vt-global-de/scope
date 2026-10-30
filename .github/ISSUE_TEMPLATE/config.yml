@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Scope documentation
+    url: https://docs-scope.vt-global.de/en/
+    about: Read deployment, configuration and operations guidance.
+  - name: Security vulnerability
+    url: https://github.com/vt-global-de/scope/security/advisories/new
+    about: Report suspected vulnerabilities privately. Do not open a public issue.
+

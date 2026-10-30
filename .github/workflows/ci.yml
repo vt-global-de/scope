@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit and configuration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          package-manager-cache: false
+
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate example inventory
+        run: npm run config:check
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  container-smoke:
+    name: Container and browser smoke test
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SMOKE_IMAGE: scope-smoke:${{ github.sha }}
+      NETWORK: scope-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_CONTAINER: scope-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+      APP_CONTAINER: scope-app-${{ github.run_id }}-${{ github.run_attempt }}
+      E2E_CONTAINER: scope-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build runtime image
+        run: docker buildx build --platform linux/amd64 --load --tag "$SMOKE_IMAGE" .
+
+      - name: Start Scope and PostgreSQL
+        run: |
+          set -euo pipefail
+          docker network create "$NETWORK"
+          docker run -d \
+            --name "$POSTGRES_CONTAINER" \
+            --network "$NETWORK" \
+            -e POSTGRES_DB=scope \
+            -e POSTGRES_USER=scope \
+            -e POSTGRES_PASSWORD=scope-test-password \
+            postgres:17-alpine
+
+          ready=false
+          for attempt in $(seq 1 30); do
+            if docker exec "$POSTGRES_CONTAINER" pg_isready -U scope -d scope; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+
+          docker run -d \
+            --name "$APP_CONTAINER" \
+            --network "$NETWORK" \
+            -e DATABASE_URL="postgres://scope:scope-test-password@$POSTGRES_CONTAINER:5432/scope" \
+            "$SMOKE_IMAGE"
+
+          ready=false
+          for attempt in $(seq 1 45); do
+            if docker exec "$APP_CONTAINER" wget -q -O /dev/null http://127.0.0.1:3000/readyz; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+
+      - name: Verify runtime contents and metadata
+        run: |
+          set -euo pipefail
+          docker exec "$APP_CONTAINER" node -e "import('node-pty')"
+          docker exec "$APP_CONTAINER" sh -c 'test ! -e /usr/local/bin/npm && test ! -e /usr/local/bin/yarn && test ! -e /usr/local/bin/corepack'
+          APP_VERSION="$(awk -F'"' '/"version":/ { print $4; exit }' package.json)"
+          docker exec "$APP_CONTAINER" wget -q -O - http://127.0.0.1:3000/api/meta | grep "\"version\":\"$APP_VERSION\""
+
+      - name: Scan runtime image
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.0 \
+            image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "$SMOKE_IMAGE"
+
+      - name: Run browser smoke tests
+        run: |
+          set -euo pipefail
+          docker run -d \
+            --name "$E2E_CONTAINER" \
+            --network "$NETWORK" \
+            -w /work \
+            -e SCOPE_BASE_URL="http://$APP_CONTAINER:3000" \
+            mcr.microsoft.com/playwright:v1.56.1-noble \
+            sleep infinity
+          docker cp "$GITHUB_WORKSPACE/." "$E2E_CONTAINER:/work"
+          docker exec "$E2E_CONTAINER" sh -lc "npm ci --ignore-scripts && npm run test:e2e"
+
+      - name: Collect logs and clean up
+        if: always()
+        run: |
+          docker logs "$APP_CONTAINER" || true
+          docker rm -f "$E2E_CONTAINER" "$APP_CONTAINER" "$POSTGRES_CONTAINER" || true
+          docker network rm "$NETWORK" || true

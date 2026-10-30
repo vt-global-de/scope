@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scope inventory version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "title", "menu"],
+  "properties": {
+    "version": { "const": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "subtitle": { "type": "string" },
+    "authenticate": { "type": "boolean" },
+    "menu": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "services": { "$ref": "#/$defs/servicesSection" },
+        "server": { "$ref": "#/$defs/serverSection" },
+        "notifications": { "$ref": "#/$defs/notificationsSection" }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "tags": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "scope": { "enum": ["include", "ignore"] },
+    "layout": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "width": { "enum": ["xsmall", "small", "medium", "large", "full"] } }
+    },
+    "check": { "oneOf": [{ "type": "boolean" }, { "type": "object" }] },
+    "serviceDefaults": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "link" }, "description": { "type": "string" }, "icon": { "type": "string" },
+        "tags": { "$ref": "#/$defs/tags" }, "favorite": { "type": "boolean" }, "scope": { "$ref": "#/$defs/scope" },
+        "depends-on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
+        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }
+      },
+      "additionalProperties": false
+    },
+    "service": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 }, "url": { "type": "string" },
+        "type": { "const": "link" }, "description": { "type": "string" }, "icon": { "type": "string" },
+        "tags": { "$ref": "#/$defs/tags" }, "favorite": { "type": "boolean" }, "scope": { "$ref": "#/$defs/scope" },
+        "depends-on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
+        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }
+      }
+    },
+    "serviceCategory": {
+      "type": "object", "additionalProperties": false, "required": ["name", "services"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
+        "collapsed": { "type": "boolean" }, "layout": { "$ref": "#/$defs/layout" },
+        "defaults": { "$ref": "#/$defs/serviceDefaults" },
+        "services": { "type": "array", "items": { "$ref": "#/$defs/service" } }
+      }
+    },
+    "serviceGroup": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "categories"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
+        "scope": { "$ref": "#/$defs/scope" }, "defaults": { "$ref": "#/$defs/serviceDefaults" },
+        "categories": { "type": "array", "items": { "$ref": "#/$defs/serviceCategory" } }
+      }
+    },
+    "servicesSection": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "subtitle": { "type": "string" }, "navigation-label": { "type": "string", "minLength": 1 },
+        "defaults": { "$ref": "#/$defs/serviceDefaults" },
+        "groups": { "type": "array", "items": { "$ref": "#/$defs/serviceGroup" } }
+      }
+    },
+    "serverDefaults": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" }, "tags": { "$ref": "#/$defs/tags" }, "favorite": { "type": "boolean" },
+        "scope": { "$ref": "#/$defs/scope" }, "enabled": { "type": "boolean" },
+        "monitoring": { "type": "object" }, "remote": { "type": "object" },
+        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }
+      },
+      "additionalProperties": false
+    },
+    "server": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }, "tags": { "$ref": "#/$defs/tags" }, "favorite": { "type": "boolean" },
+        "scope": { "$ref": "#/$defs/scope" }, "enabled": { "type": "boolean" },
+        "monitoring": { "type": "object" }, "remote": { "type": "object" },
+        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }
+      }
+    },
+    "serverCategory": {
+      "type": "object", "additionalProperties": false, "required": ["name", "servers"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
+        "collapsed": { "type": "boolean" }, "layout": { "$ref": "#/$defs/layout" },
+        "defaults": { "$ref": "#/$defs/serverDefaults" },
+        "servers": { "type": "array", "items": { "$ref": "#/$defs/server" } }
+      }
+    },
+    "serverGroup": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "categories"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
+        "scope": { "$ref": "#/$defs/scope" }, "defaults": { "$ref": "#/$defs/serverDefaults" },
+        "categories": { "type": "array", "items": { "$ref": "#/$defs/serverCategory" } }
+      }
+    },
+    "serverSection": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "subtitle": { "type": "string" }, "navigation-label": { "type": "string", "minLength": 1 },
+        "defaults": { "$ref": "#/$defs/serverDefaults" },
+        "groups": { "type": "array", "items": { "$ref": "#/$defs/serverGroup" } }
+      }
+    },
+    "notificationChannel": {
+      "type": "object", "required": ["id", "name", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["smtp", "discord"] }, "enabled": { "type": "boolean" },
+        "hostname": {}, "port": {}, "secure": {}, "username": {}, "password": {}, "from": {}, "to": {}, "webhook-url": {}
+      }
+    },
+    "notificationsSection": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "subtitle": { "type": "string" },
+        "channels": { "type": "array", "items": { "$ref": "#/$defs/notificationChannel" } },
+        "rules": { "type": "array", "items": { "type": "object" } },
+        "maintenance-windows": { "type": "array", "items": { "type": "object" } }
+      }
+    }
+  }
+}

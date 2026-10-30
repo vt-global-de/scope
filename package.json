@@ -1,0 +1,28 @@
+{
+  "name": "scope",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "description": "Scope: a configuration-driven dashboard, monitoring and browser remote access portal.",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "config:check": "node src/check-config.mjs",
+    "admin:recover": "node src/admin-recovery.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:e2e": "playwright test"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0",
+    "postgres": "3.4.9",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

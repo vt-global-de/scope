@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Scope · Login</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <script src="/theme-init.js"></script>
+    <link rel="stylesheet" href="/login.css">
+    <script src="/login.js" type="module"></script>
+  </head>
+  <body>
+    <main class="login-layout">
+      <section class="login-visual" aria-hidden="true">
+        <div class="scope-grid"></div>
+        <div class="scope-orbit scope-orbit-outer"><i></i><i></i><i></i></div>
+        <div class="scope-orbit scope-orbit-inner"><i></i><i></i></div>
+        <div class="scope-core"><img class="brand-signal" src="/favicon.svg" alt=""></div>
+        <div class="visual-copy">
+          <span>SCOPE</span>
+          <strong data-i18n="loginVisualTitle">Your infrastructure. One focused view.</strong>
+        </div>
+      </section>
+
+      <section class="login-panel">
+        <div class="login-controls">
+          <button id="login-language-toggle" class="control-toggle language-toggle" type="button" aria-label="Switch language to German">
+            <span>EN</span><span>DE</span><i></i>
+          </button>
+          <button id="login-theme-toggle" class="control-toggle theme-toggle" type="button" aria-label="Switch to dark mode">
+            <span>☀</span><span>☾</span><i></i>
+          </button>
+        </div>
+
+        <div class="login-card">
+          <div class="login-brand">
+            <img class="brand-signal" src="/favicon.svg" alt="" aria-hidden="true">
+            <span><strong id="login-app-title">Scope</strong><small id="login-app-subtitle">Homelab Control Plane</small></span>
+          </div>
+          <div class="login-heading">
+            <p id="login-kicker" data-i18n="protectedWorkspace">Protected workspace</p>
+            <h1 id="login-title" data-i18n="welcomeBack">Welcome back.</h1>
+            <span id="login-prompt" data-i18n="loginPrompt">Sign in with your Scope account to open your control plane.</span>
+          </div>
+          <form id="login-form">
+            <label id="display-name-label" for="login-display-name" data-i18n="displayName" hidden>Display name</label>
+            <div id="display-name-field" class="input-field" hidden>
+              <input id="login-display-name" name="display-name" type="text" autocomplete="name">
+            </div>
+            <label for="login-username" data-i18n="username">Username</label>
+            <div class="input-field">
+              <input id="login-username" name="username" type="text" autocomplete="username" required autofocus>
+            </div>
+            <label for="login-password" data-i18n="password">Password</label>
+            <div class="password-field">
+              <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+              <button id="password-visibility" type="button" aria-label="Show password" data-i18n-aria-label="showPassword">◉</button>
+            </div>
+            <label id="password-confirmation-label" for="login-password-confirmation" data-i18n="confirmPassword" hidden>Confirm password</label>
+            <div id="password-confirmation-field" class="input-field" hidden>
+              <input id="login-password-confirmation" name="password-confirmation" type="password" autocomplete="new-password">
+            </div>
+            <p id="login-error" class="login-error" role="alert" hidden></p>
+            <button id="login-submit" class="login-submit" type="submit">
+              <span data-i18n="openScope">Open Scope</span><i aria-hidden="true">→</i>
+            </button>
+          </form>
+          <p class="login-note"><i></i><span data-i18n="privateSession">Your session stays private on this device.</span></p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

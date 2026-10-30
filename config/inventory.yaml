@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=./inventory.schema.json
+version: 1
+title: Scope
+subtitle: Infrastructure Control Plane
+authenticate: false
+
+menu:
+  services:
+    subtitle: Availability and entry points for configured applications.
+    navigation-label: Groups
+    defaults:
+      certificates: false
+      dns: false
+    groups:
+      - id: local
+        name: Local
+        defaults:
+          tags: [management]
+          depends-on: [local-docker]
+        categories:
+          - id: core-services
+            name: Core services
+            layout:
+              width: full
+            services:
+              - id: scope
+                name: Scope
+                description: This Scope instance
+                url: http://localhost:3000
+                icon: /favicon.svg
+                favorite: true
+
+  server:
+    subtitle: Docker metrics, infrastructure health and remote access.
+    navigation-label: Device groups
+    groups:
+      - id: local
+        name: Local
+        categories:
+          - id: docker-hosts
+            name: Docker hosts
+            layout:
+              width: full
+            defaults:
+              tags: [docker]
+            servers:
+              - id: local-docker
+                name: Local Docker host
+                description: Docker Engine connected through the local socket
+                monitoring:
+                  connection:
+                    type: socket
+
+  notifications:
+    subtitle: Readiness of configured delivery channels.
+    maintenance-windows: []
+    channels:
+      - id: smtp-example
+        name: SMTP example
+        type: smtp
+        enabled: false
+        hostname: ${NOTIFICATION_SMTP_HOSTNAME}
+        port: ${NOTIFICATION_SMTP_PORT}
+        secure: ${NOTIFICATION_SMTP_SECURE}
+        username: ${NOTIFICATION_SMTP_USERNAME}
+        password: ${NOTIFICATION_SMTP_PASSWORD}
+        from: ${NOTIFICATION_SMTP_FROM}
+        to: ${NOTIFICATION_SMTP_TO}
+      - id: discord-example
+        name: Discord example
+        type: discord
+        enabled: false
+        webhook-url: ${NOTIFICATION_DISCORD_WEBHOOK_URL}
+    rules:
+      - id: status-changes
+        name: Scoped status changes
+        enabled: false
+        events: [down, recovered]
+        channels: [smtp-example, discord-example]
+        delay-seconds: 60

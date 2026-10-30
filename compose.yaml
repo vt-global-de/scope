@@ -1,0 +1,117 @@
+services:
+  scope:
+    image: ${SCOPE_IMAGE:-ghcr.io/vt-global-de/scope:1.0.0}
+    container_name: scope
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    group_add:
+      - "${DOCKER_GID:-999}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Core application, paths and database
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-3000}
+      SCOPE_PUBLIC_URL: ${SCOPE_PUBLIC_URL:-}
+      INVENTORY_CONFIG_FILE: ${INVENTORY_CONFIG_FILE:-/app/config/inventory.yaml}
+      DATABASE_URL: postgres://scope:${SCOPE_DB_PASSWORD:?set SCOPE_DB_PASSWORD}@postgres:5432/scope
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+      AUTH_SESSION_TTL_MS: ${AUTH_SESSION_TTL_MS:-43200000}
+      ICON_BASE_URL: ${ICON_BASE_URL:-https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons}
+      PROMETHEUS_METRICS_ENABLED: ${PROMETHEUS_METRICS_ENABLED:-false}
+      METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:-}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+
+      # Optional trusted forward-auth integration
+      REMOTE_AUTH_REQUIRED: ${REMOTE_AUTH_REQUIRED:-false} # Local example stack permits Scope accounts without a proxy header.
+      REMOTE_USER_HEADER: ${REMOTE_USER_HEADER:-x-authentik-username}
+      REMOTE_ACCESS_ROLE: ${REMOTE_ACCESS_ROLE:-operator}
+
+      # Credentials referenced by remote targets in inventory.yaml
+      REMOTE_SSH_USERNAME: ${REMOTE_SSH_USERNAME:-}
+      REMOTE_SSH_PASSWORD: ${REMOTE_SSH_PASSWORD:-}
+      REMOTE_RDP_USERNAME: ${REMOTE_RDP_USERNAME:-}
+      REMOTE_RDP_PASSWORD: ${REMOTE_RDP_PASSWORD:-}
+
+      # Optional deployment-level feature switches
+      FEATURE_SERVICES_ENABLED: ${FEATURE_SERVICES_ENABLED:-true}
+      FEATURE_SERVERS_ENABLED: ${FEATURE_SERVERS_ENABLED:-true}
+      FEATURE_NOTIFICATIONS_ENABLED: ${FEATURE_NOTIFICATIONS_ENABLED:-true}
+
+      # Service, remote, Docker, certificate and DNS checks
+      STATUS_CHECK_CONCURRENCY: ${STATUS_CHECK_CONCURRENCY:-8}
+      STATUS_CHECK_TIMEOUT_MS: ${STATUS_CHECK_TIMEOUT_MS:-4000}
+      STATUS_CACHE_TTL_MS: ${STATUS_CACHE_TTL_MS:-30000}
+      REMOTE_STATUS_CHECK_TIMEOUT_MS: ${REMOTE_STATUS_CHECK_TIMEOUT_MS:-3000}
+      REMOTE_STATUS_CACHE_TTL_MS: ${REMOTE_STATUS_CACHE_TTL_MS:-30000}
+      MONITORING_CHECK_TIMEOUT_MS: ${MONITORING_CHECK_TIMEOUT_MS:-15000}
+      MONITORING_CACHE_TTL_MS: ${MONITORING_CACHE_TTL_MS:-30000}
+      CERTIFICATE_CHECK_TIMEOUT_MS: ${CERTIFICATE_CHECK_TIMEOUT_MS:-5000}
+      CERTIFICATE_CACHE_TTL_MS: ${CERTIFICATE_CACHE_TTL_MS:-30000}
+      DNS_CHECK_TIMEOUT_MS: ${DNS_CHECK_TIMEOUT_MS:-4000}
+      DNS_CACHE_TTL_MS: ${DNS_CACHE_TTL_MS:-30000}
+
+      # Persistent status history
+      STATUS_HISTORY_INTERVAL_MS: ${STATUS_HISTORY_INTERVAL_MS:-60000}
+      STATUS_HISTORY_JITTER_MS: ${STATUS_HISTORY_JITTER_MS:-5000}
+      STATUS_HISTORY_MAX_BACKOFF_MS: ${STATUS_HISTORY_MAX_BACKOFF_MS:-900000}
+      STATUS_HISTORY_RETENTION_DAYS: ${STATUS_HISTORY_RETENTION_DAYS:-90}
+
+      # Browser-based SSH and RDP sessions
+      REMOTE_SESSION_MAX_CONCURRENT: ${REMOTE_SESSION_MAX_CONCURRENT:-4}
+      REMOTE_SESSION_ATTACH_TIMEOUT_MS: ${REMOTE_SESSION_ATTACH_TIMEOUT_MS:-30000}
+      REMOTE_SESSION_MAX_DURATION_MS: ${REMOTE_SESSION_MAX_DURATION_MS:-28800000}
+      REMOTE_SESSION_IDLE_TIMEOUT_MS: ${REMOTE_SESSION_IDLE_TIMEOUT_MS:-900000}
+      FREERDP_COMMAND: ${FREERDP_COMMAND:-}
+      NOVNC_PUBLIC_DIR: ${NOVNC_PUBLIC_DIR:-/usr/share/novnc}
+
+      # Notification transport settings and secrets referenced by inventory.yaml
+      NOTIFICATION_SMTP_HOSTNAME: ${NOTIFICATION_SMTP_HOSTNAME:-smtp.example.internal}
+      NOTIFICATION_SMTP_PORT: ${NOTIFICATION_SMTP_PORT:-587}
+      NOTIFICATION_SMTP_SECURE: ${NOTIFICATION_SMTP_SECURE:-false}
+      NOTIFICATION_SMTP_USERNAME: ${NOTIFICATION_SMTP_USERNAME:-}
+      NOTIFICATION_SMTP_PASSWORD: ${NOTIFICATION_SMTP_PASSWORD:-}
+      NOTIFICATION_SMTP_FROM: ${NOTIFICATION_SMTP_FROM:-scope@example.internal}
+      NOTIFICATION_SMTP_TO: ${NOTIFICATION_SMTP_TO:-ops@example.internal}
+      NOTIFICATION_DISCORD_WEBHOOK_URL: ${NOTIFICATION_DISCORD_WEBHOOK_URL:-}
+      NOTIFICATION_RETRY_INTERVAL_MS: ${NOTIFICATION_RETRY_INTERVAL_MS:-30000}
+    volumes:
+      - ./config/inventory.yaml:/app/config/inventory.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/readyz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    stop_grace_period: 20s
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: scope-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: scope
+      POSTGRES_USER: scope
+      POSTGRES_PASSWORD: ${SCOPE_DB_PASSWORD:?set SCOPE_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scope -d scope"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - scope_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  scope_postgres_data:

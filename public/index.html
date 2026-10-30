@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Services, server monitoring, and remote access for homelab environments" data-i18n-content="appDescription">
+    <title>Scope</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <script src="/theme-init.js"></script>
+    <link rel="stylesheet" href="/vendor/xterm/xterm.css">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <div class="app-layout">
+      <aside id="app-sidebar" class="sidebar">
+        <a id="brand-link" class="brand" href="#overview" aria-label="Open Scope overview">
+          <img class="brand-signal" src="/favicon.svg" alt="" aria-hidden="true">
+          <span>
+            <strong id="brand-title">Scope</strong>
+            <small id="brand-subtitle">Homelab control plane</small>
+          </span>
+        </a>
+        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-controls="app-sidebar" aria-expanded="true" aria-label="Collapse menu" title="Collapse menu">‹</button>
+
+        <div class="sidebar-navigation">
+          <p class="sidebar-label" data-i18n="menuBar">Menu bar</p>
+          <nav class="module-nav" aria-label="Main navigation" data-i18n-aria-label="mainNavigation">
+            <a id="overview-nav-link" href="#overview" data-module="overview">
+              <span class="module-icon" aria-hidden="true"><img class="module-brand-icon" src="/favicon.svg" alt=""></span>
+              <span><strong data-i18n="scope">Scope</strong></span>
+            </a>
+            <span class="module-separator" aria-hidden="true"></span>
+            <a id="dashboard-nav-link" href="#services" data-module="dashboard">
+              <span class="module-icon" aria-hidden="true">▦</span>
+              <span><strong data-i18n="services">Services</strong></span>
+            </a>
+            <a id="servers-nav-link" href="#servers" data-module="servers">
+              <span class="module-icon" aria-hidden="true">⌁</span>
+              <span><strong data-i18n="server">Server</strong></span>
+            </a>
+            <a id="notifications-nav-link" href="#notifications" data-module="notifications" hidden>
+              <span class="module-icon" aria-hidden="true">△</span>
+              <span><strong data-i18n="notifications">Notifications</strong></span>
+            </a>
+          </nav>
+        </div>
+
+        <button id="settings-button" class="sidebar-settings" type="button" aria-label="Open settings" title="Open settings" hidden>
+          <span class="module-icon" aria-hidden="true">⚙</span>
+          <span><strong data-i18n="settings">Settings</strong><small id="settings-user"></small></span>
+        </button>
+        <div class="sidebar-status">
+          <p class="sidebar-label" data-i18n="status">Status</p>
+          <div class="status-legend" aria-label="Status legend" data-i18n-aria-label="statusLegend">
+            <span><i class="legend-dot up"></i>Up</span>
+            <span><i class="legend-dot down"></i>Down</span>
+          </div>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="view-context">
+            <span class="context-mark" aria-hidden="true">⌁</span>
+            <span class="view-context-copy">
+              <strong id="view-title">Service overview</strong>
+              <small id="view-subtitle">Loading configuration …</small>
+            </span>
+          </div>
+          <div class="header-actions">
+            <div class="global-search">
+              <span aria-hidden="true">⌕</span>
+              <input id="global-search-input" type="search" autocomplete="off" placeholder="Search services and servers" data-i18n-placeholder="searchPlaceholder" aria-label="Search services and servers" data-i18n-aria-label="searchPlaceholder">
+              <div id="global-search-results" class="search-results" hidden></div>
+            </div>
+            <span id="view-count" class="view-count" hidden></span>
+            <span class="readonly-badge" data-i18n="configDriven">Config-driven</span>
+            <button id="density-toggle" class="density-toggle" type="button" aria-label="Use compact layout" title="Use compact layout">↔</button>
+            <button id="logout-button" class="logout-button" type="button" data-i18n="logout" hidden>Log out</button>
+            <button id="language-toggle" class="language-toggle" type="button" aria-label="Switch language to German">
+              <span class="language-option language-option-en" aria-hidden="true">EN</span>
+              <span class="language-option language-option-de" aria-hidden="true">DE</span>
+              <span class="language-toggle-thumb" aria-hidden="true"></span>
+            </button>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
+              <span class="theme-option theme-option-light" aria-hidden="true">☀</span>
+              <span class="theme-option theme-option-dark" aria-hidden="true">☾</span>
+              <span class="theme-toggle-thumb" aria-hidden="true"></span>
+            </button>
+          </div>
+        </header>
+
+        <main class="content">
+          <section id="overview-view" class="feature-view">
+            <div class="scope-overview">
+              <div id="scope-focus" class="scope-focus" aria-hidden="true"><i></i><span id="scope-score">–</span></div>
+              <div>
+                <p class="overview-kicker" data-i18n="infrastructureScope">Infrastructure scope</p>
+                <h1 data-i18n="overviewHeadline">Everything important in one focused view.</h1>
+                <p data-i18n="overviewDescription">A compact health summary without replacing the detailed module pages.</p>
+                <p id="scope-membership" class="scope-membership"></p>
+                <div id="scope-trend" class="scope-trend"></div>
+              </div>
+            </div>
+            <div id="overview-grid" class="overview-grid" aria-live="polite"></div>
+            <section class="overview-issues-section">
+              <div class="overview-section-heading"><h2 data-i18n="attentionRequired">Attention required</h2><span id="overview-updated"></span></div>
+              <div id="overview-issues" class="overview-issues"></div>
+            </section>
+            <section class="overview-history-section">
+              <div class="overview-section-heading"><h2 data-i18n="recentStatusChanges">Recent status changes</h2><span id="history-summary"></span></div>
+              <div id="overview-history" class="overview-history" aria-live="polite"></div>
+            </section>
+          </section>
+
+          <section id="dashboard-view" class="feature-view" hidden>
+            <div class="environment-panel">
+              <span id="service-group-label" class="environment-label">Groups</span>
+              <nav id="group-nav" class="environment-nav" aria-label="Service groups"></nav>
+              <button id="service-layout-toggle" class="layout-toggle" type="button" aria-pressed="false" data-i18n="customizeLayout">Customize layout</button>
+            </div>
+            <div id="service-layout-toolbar" class="layout-toolbar" hidden>
+              <span data-i18n="layoutEditHint">Move, resize, or hide panels.</span>
+              <button id="service-layout-reset" type="button" data-i18n="resetLayout">Reset layout</button>
+            </div>
+            <div id="service-filter-bar" class="filter-bar" hidden><span data-i18n="filterByTag">Filter by tag</span><div id="service-tag-filters" class="tag-filters"></div></div>
+
+            <div id="dashboard-error" class="error" role="alert" hidden></div>
+            <div id="groups" class="groups" aria-live="polite"></div>
+          </section>
+
+          <section id="monitoring-view" class="feature-view" hidden>
+            <div id="server-group-panel" class="environment-panel">
+              <span id="server-group-label" class="environment-label">Groups</span>
+              <nav id="server-group-nav" class="environment-nav" aria-label="Server groups"></nav>
+              <button id="server-layout-toggle" class="layout-toggle" type="button" aria-pressed="false" data-i18n="customizeLayout">Customize layout</button>
+            </div>
+            <div id="server-layout-toolbar" class="layout-toolbar" hidden>
+              <span data-i18n="layoutEditHint">Move, resize, or hide panels.</span>
+              <button id="server-layout-reset" type="button" data-i18n="resetLayout">Reset layout</button>
+            </div>
+            <div id="server-filter-bar" class="filter-bar" hidden><span data-i18n="filterByTag">Filter by tag</span><div id="server-tag-filters" class="tag-filters"></div></div>
+            <div id="monitoring-error" class="error" role="alert" hidden></div>
+            <div id="monitoring-groups" class="monitoring-groups" aria-live="polite"></div>
+          </section>
+
+          <section id="notifications-view" class="feature-view" hidden>
+            <div id="notifications-error" class="error" role="alert" hidden></div>
+            <div id="notifications-grid" class="insight-grid" aria-live="polite"></div>
+            <section id="maintenance-section" class="notification-history" hidden>
+              <div><h2 data-i18n="maintenanceWindows">Maintenance windows</h2><p data-i18n="maintenanceDescription">Temporarily suppress automatic alerts for one target.</p></div>
+              <div class="maintenance-form">
+                <select id="maintenance-target-type" aria-label="Target type" data-i18n-aria-label="targetType">
+                  <option value="service" data-i18n="targetService">Service</option><option value="monitoring" data-i18n="targetMonitoring">Monitoring</option><option value="remote" data-i18n="targetRemote">Remote</option><option value="certificate" data-i18n="targetCertificate">Certificate</option><option value="dns">DNS</option>
+                </select>
+                <input id="maintenance-target-id" list="maintenance-target-options" placeholder="Target ID" data-i18n-placeholder="targetId">
+                <datalist id="maintenance-target-options"></datalist>
+                <input id="maintenance-duration" type="number" min="1" max="10080" value="60" placeholder="Minutes" data-i18n-placeholder="minutes">
+                <input id="maintenance-reason" placeholder="Reason" data-i18n-placeholder="reason">
+                <button id="maintenance-create" type="button" data-i18n="createMaintenance">Mute target</button>
+              </div>
+              <div id="maintenance-list" class="notification-history-list"></div>
+            </section>
+            <section id="notification-history-section" class="notification-history" hidden>
+              <div><h2 data-i18n="deliveryHistory">Delivery history</h2><p data-i18n="deliveryHistoryDescription">Recent automatic notification attempts.</p></div>
+              <div id="notification-history-list" class="notification-history-list"></div>
+            </section>
+          </section>
+
+          <section id="session-view" class="session-view" hidden>
+            <div class="session-toolbar">
+              <div class="session-identity">
+                <span class="session-indicator" aria-hidden="true"></span>
+                <span id="session-protocol" class="session-protocol">REMOTE</span>
+                <span class="session-copy"><strong id="session-title" data-i18n="remoteSession">Remote session</strong><small id="session-status"></small></span>
+              </div>
+              <div class="session-controls">
+                <div id="session-hotkeys" class="session-hotkeys" role="toolbar" aria-label="Send hotkey" data-i18n-aria-label="sendHotkey">
+                  <span data-i18n="sendKeys">Send keys</span>
+                  <button type="button" data-session-protocol="ssh" data-hotkey="ctrl-c" aria-label="Send Ctrl+C" data-i18n-aria-label="sendCtrlC"><kbd>Ctrl</kbd><kbd>C</kbd></button>
+                  <button type="button" data-session-protocol="ssh" data-hotkey="ctrl-l" aria-label="Send Ctrl+L" data-i18n-aria-label="sendCtrlL"><kbd>Ctrl</kbd><kbd>L</kbd></button>
+                  <button type="button" data-session-protocol="ssh" data-hotkey="ctrl-d" aria-label="Send Ctrl+D" data-i18n-aria-label="sendCtrlD"><kbd>Ctrl</kbd><kbd>D</kbd></button>
+                  <button type="button" data-session-protocol="ssh" data-hotkey="escape" aria-label="Send Escape" data-i18n-aria-label="sendEscape"><kbd>Esc</kbd></button>
+                  <button type="button" data-session-protocol="rdp" data-hotkey="ctrl-alt-delete" aria-label="Send Ctrl+Alt+Delete" data-i18n-aria-label="sendCtrlAltDelete"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Del</kbd></button>
+                  <button type="button" data-session-protocol="rdp" data-hotkey="ctrl-alt-end" aria-label="Send Ctrl+Alt+End" data-i18n-aria-label="sendCtrlAltEnd"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>End</kbd></button>
+                  <button type="button" data-session-protocol="rdp" data-hotkey="alt-tab" aria-label="Send Alt+Tab" data-i18n-aria-label="sendAltTab"><kbd>Alt</kbd><kbd>Tab</kbd></button>
+                  <button type="button" data-session-protocol="rdp" data-hotkey="windows" aria-label="Send Windows key" data-i18n-aria-label="sendWindowsKey"><kbd>Win</kbd></button>
+                </div>
+                <label id="rdp-quality-control" class="rdp-quality-control" hidden>
+                  <span data-i18n="rdpStream">RDP stream</span>
+                  <select id="rdp-quality" aria-label="RDP stream profile" data-i18n-aria-label="rdpStreamProfile">
+                    <option value="performance" data-i18n="streamPerformance">Performance</option>
+                    <option value="balanced" data-i18n="streamBalanced">Balanced</option>
+                    <option value="quality" data-i18n="streamQuality">Quality</option>
+                  </select>
+                </label>
+                <div class="session-actions">
+                  <button id="session-diagnostics" type="button" data-icon="↓" data-i18n="downloadDiagnostics">Download diagnostics</button>
+                  <button id="session-fullscreen" type="button" data-icon="⛶" data-i18n="fullscreen">Fullscreen</button>
+                  <button id="session-close" class="session-close" type="button" data-icon="×" data-i18n="closeSession">Close session</button>
+                </div>
+              </div>
+            </div>
+            <div id="ssh-terminal" class="remote-surface ssh-surface" aria-label="SSH terminal" data-i18n-aria-label="sshTerminal" hidden>
+              <div class="terminal-chrome" aria-hidden="true">
+                <span class="terminal-mark">›_</span>
+                <span>scope://secure-shell</span>
+                <span>UTF-8 · xterm-256color</span>
+              </div>
+              <div id="ssh-terminal-canvas" class="ssh-terminal-canvas"></div>
+            </div>
+            <div id="rdp-display" class="remote-surface" aria-label="RDP desktop" data-i18n-aria-label="rdpDesktop" hidden></div>
+          </section>
+        </main>
+
+        <footer class="site-footer">
+          <span id="footer-title">Scope</span>
+          <span id="app-version">v–</span>
+        </footer>
+      </section>
+    </div>
+    <dialog id="settings-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-shell">
+        <header class="settings-header">
+          <div><p data-i18n="personalPreferences">Personal preferences</p><h2 data-i18n="settings">Settings</h2></div>
+          <button class="settings-close" value="close" aria-label="Close settings" data-i18n-aria-label="closeSettings">×</button>
+        </header>
+        <div class="settings-content">
+          <section class="settings-account">
+            <span class="settings-avatar" id="settings-avatar">S</span>
+            <div><strong id="settings-display-name">Scope user</strong><small id="settings-account-name"></small></div>
+            <span id="settings-role" class="settings-role"></span>
+          </section>
+          <section class="settings-section">
+            <div><h3 data-i18n="appearance">Appearance</h3><p data-i18n="appearanceDescription">Personalize Scope on every device.</p></div>
+            <label><span data-i18n="theme">Theme</span><select id="settings-theme"><option value="dark" data-i18n="dark">Dark</option><option value="light" data-i18n="light">Light</option></select></label>
+            <label><span data-i18n="language">Language</span><select id="settings-language"><option value="en">English</option><option value="de">Deutsch</option></select></label>
+            <label><span data-i18n="displayDensity">Display density</span><select id="settings-density"><option value="comfortable" data-i18n="comfortable">Comfortable</option><option value="compact" data-i18n="compact">Compact</option></select></label>
+            <label><span data-i18n="sidebarDefault">Sidebar</span><select id="settings-sidebar"><option value="expanded" data-i18n="expanded">Expanded</option><option value="collapsed" data-i18n="collapsed">Collapsed</option></select></label>
+          </section>
+          <section class="settings-section">
+            <div><h3 data-i18n="dashboardData">Dashboard data</h3><p data-i18n="dashboardDataDescription">Reset personal overrides without changing inventory.yaml.</p></div>
+            <div class="settings-reset-grid">
+              <button id="settings-reset-layouts" type="button" data-i18n="resetAllLayouts">Reset all layouts</button>
+              <button id="settings-reset-favorites" type="button" data-i18n="resetFavorites">Reset favorites</button>
+            </div>
+          </section>
+          <section class="settings-section">
+            <div><h3 data-i18n="accountSecurity">Account security</h3><p data-i18n="accountSecurityDescription">Changing your password signs out all active sessions.</p></div>
+            <div class="settings-fields">
+              <input id="settings-current-password" type="password" autocomplete="current-password" placeholder="Current password" data-i18n-placeholder="currentPassword">
+              <input id="settings-new-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="New password" data-i18n-placeholder="newPassword">
+              <button id="settings-change-password" type="button" data-i18n="changePassword">Change password</button>
+            </div>
+          </section>
+          <section id="settings-user-management" class="settings-section" hidden>
+            <div><h3 data-i18n="userManagement">User management</h3><p data-i18n="userManagementDescription">Create personal accounts and control their access.</p></div>
+            <div class="settings-fields">
+              <input id="settings-new-username" autocomplete="off" placeholder="Username" data-i18n-placeholder="username">
+              <input id="settings-new-display-name" autocomplete="off" placeholder="Display name" data-i18n-placeholder="displayName">
+              <input id="settings-new-user-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Initial password" data-i18n-placeholder="initialPassword">
+              <select id="settings-new-user-role"><option value="viewer" data-i18n="viewer">Viewer</option><option value="operator" data-i18n="operator">Operator</option><option value="admin" data-i18n="administrator">Administrator</option></select>
+              <button id="settings-create-user" type="button" data-i18n="createUser">Create user</button>
+            </div>
+            <div id="settings-users" class="settings-users"></div>
+          </section>
+          <section id="settings-audit" class="settings-section" hidden>
+            <div><h3 data-i18n="auditLog">Audit log</h3><p data-i18n="auditLogDescription">Recent security and administrative actions.</p></div>
+            <div id="settings-audit-events" class="settings-users"></div>
+          </section>
+          <p id="settings-status" class="settings-status" aria-live="polite"></p>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

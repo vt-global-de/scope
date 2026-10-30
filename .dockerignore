@@ -1,0 +1,17 @@
+.git
+.gitignore
+.github
+.env
+.env.*
+*.dump
+config/docker-tls/
+compose.yaml
+README.md
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+LICENSE
+ROADMAP.md
+SECURITY.md
+docs
+test
