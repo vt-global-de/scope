@@ -123,12 +123,14 @@ jobs:
       - name: Run browser smoke tests
         run: |
           set -euo pipefail
+          PLAYWRIGHT_VERSION="$(sed -n '/"node_modules\/@playwright\/test": {/,/"resolved":/ s/.*"version": "\([^"]*\)".*/\1/p' package-lock.json)"
+          test -n "$PLAYWRIGHT_VERSION"
           docker run -d \
             --name "$E2E_CONTAINER" \
             --network "$NETWORK" \
             -w /work \
             -e SCOPE_BASE_URL="http://$APP_CONTAINER:3000" \
-            mcr.microsoft.com/playwright:v1.56.1-noble \
+            "mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble" \
             sleep infinity
           docker cp "$GITHUB_WORKSPACE/." "$E2E_CONTAINER:/work"
           docker exec "$E2E_CONTAINER" sh -lc "npm ci --ignore-scripts && npm run test:e2e"
