@@ -4,6 +4,26 @@ title: Scope
 subtitle: Infrastructure Control Plane
 authenticate: false
 
+# Discovery is provider-neutral. Every adapter produces the same normalized
+# inventory model; none of the reverse-proxy drivers is required by Scope.
+discovery:
+  enabled: true
+  providers:
+    - id: local-docker
+      name: Local Docker Engine
+      type: docker
+      server: local-docker
+      authoritative: false
+    # Optional reverse-proxy examples:
+    # - id: edge-routes
+    #   name: Edge routes
+    #   type: reverse-proxy
+    #   driver: caddy # traefik, caddy, or nginx-proxy-manager
+    #   url: http://caddy:2019
+    #   depends-on: [local-docker] # inherited by newly discovered services
+    #   token-env: DISCOVERY_EDGE_TOKEN
+    #   authoritative: true
+
 menu:
   services:
     subtitle: Availability and entry points for configured applications.
@@ -27,6 +47,10 @@ menu:
                 name: Scope
                 description: This Scope instance
                 url: http://localhost:3000
+                health:
+                  path: /readyz
+                  expected-status: [200]
+                  timeout-ms: 3000
                 icon: /favicon.svg
                 favorite: true
 

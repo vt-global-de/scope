@@ -12,7 +12,7 @@ body:
     attributes:
       label: Scope version
       description: Use the exact image tag or version shown in the UI.
-      placeholder: 1.0.0
+      placeholder: 1.1.0
     validations:
       required: true
   - type: dropdown

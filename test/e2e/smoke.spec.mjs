@@ -7,6 +7,58 @@ test("loads the Scope overview and primary navigation", async ({ page }) => {
   await expect(page.locator("#overview-nav-link")).toBeVisible();
   await expect(page.locator("#dashboard-nav-link")).toBeVisible();
   await expect(page.locator("#servers-nav-link")).toBeVisible();
+  await expect(page.locator("#admin-nav-link")).toBeHidden();
+  await expect(page.locator("#theme-toggle .theme-icon")).toHaveCount(2);
+  await page.locator("#dashboard-nav-link").click();
+  await expect(page.locator(".card .arrow")).toHaveCount(0);
+  await expect(page.locator("#service-inbox-button")).toBeVisible();
+  await page.locator("#service-inbox-button").click();
+  await expect(page.locator("#service-inbox-dialog")).toBeVisible();
+  await expect(page.locator(".service-inbox-provider")).toHaveCount(1, { timeout: 10000 });
+  await expect(page.locator(".service-inbox-provider")).toHaveAttribute("data-status", /^(up|down)$/);
+  await expect(page.locator("#service-inbox-services-view")).toBeVisible();
+  await expect(page.locator("#service-inbox-providers-view")).toBeHidden();
+  await page.locator('[data-service-inbox-view="providers"]').click();
+  await expect(page.locator("#service-inbox-services-view")).toBeHidden();
+  await expect(page.locator("#service-inbox-providers-view")).toBeVisible();
+  await expect(page.locator(".service-inbox-provider")).toBeVisible();
+  const crowdedProviderLayout = await page.locator("#service-inbox-providers-view").evaluate((view) => {
+    const grid = view.querySelector("#service-inbox-providers");
+    const card = grid.querySelector(".service-inbox-provider");
+    for (let index = 0; index < 80; index += 1) grid.append(card.cloneNode(true));
+    return { clientHeight: view.clientHeight, scrollHeight: view.scrollHeight };
+  });
+  expect(crowdedProviderLayout.clientHeight).toBeGreaterThan(0);
+  expect(crowdedProviderLayout.scrollHeight).toBeGreaterThan(crowdedProviderLayout.clientHeight);
+  const serviceInboxLayout = await page.locator("#service-inbox-dialog").evaluate((dialog) => ({
+    dialogOverflow: getComputedStyle(dialog).overflow,
+    bodyOverflow: getComputedStyle(document.body).overflow,
+    providerOverflow: getComputedStyle(dialog.querySelector("#service-inbox-providers-view")).overflowY,
+    clientWidth: dialog.clientWidth,
+    scrollWidth: dialog.scrollWidth
+  }));
+  expect(serviceInboxLayout.dialogOverflow).toBe("hidden");
+  expect(serviceInboxLayout.bodyOverflow).toBe("hidden");
+  expect(serviceInboxLayout.providerOverflow).toBe("auto");
+  expect(serviceInboxLayout.scrollWidth).toBeLessThanOrEqual(serviceInboxLayout.clientWidth + 1);
+  await page.locator('[data-service-inbox-view="services"]').click();
+  await expect(page.locator("#service-inbox-services-view")).toBeVisible();
+  const serviceViewHeight = await page.locator("#service-inbox-services-view").evaluate((view) => view.clientHeight);
+  expect(serviceViewHeight).toBeGreaterThan(0);
+  await page.mouse.click(1, 1);
+  await expect(page.locator("#service-inbox-dialog")).toBeVisible();
+  await page.locator("#proposal-list").evaluate((list) => {
+    const editor = document.createElement("div");
+    editor.className = "proposal-editor";
+    list.append(editor);
+  });
+  await page.locator("#service-inbox-refresh").click();
+  await expect(page.locator("#service-inbox-refresh")).toBeEnabled({ timeout: 10000 });
+  await expect(page.locator("#proposal-list > .proposal-editor")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#service-inbox-dialog")).toBeVisible();
+  await page.locator("#service-inbox-close").click();
+  await expect(page.locator("#service-inbox-dialog")).toBeHidden();
   await expect(page.locator("#config-error")).toHaveCount(0);
 });
 
@@ -86,13 +138,12 @@ test("keeps card utilities separated and only divides stacked server statistics"
       server.className = "layout-card-shell monitoring-card-shell";
       server.style.width = `${width}px`;
       server.innerHTML = `
-        <article class="monitoring-card">
+        <article class="monitoring-card" data-status="down">
           <div class="monitoring-card-header">
             <div><h3>A deliberately long server name</h3></div>
             <div class="remote-card-meta">
               <span class="scope-badge scope-badge-ignored">⊘</span>
-              <span class="protocol-badge">TLS</span>
-              <span class="card-state"><i class="status-indicator"></i></span>
+              <span class="server-status server-monitoring-state" data-status="up"><i class="status-indicator"></i><span>Docker/TLS</span></span>
               <button class="favorite-button">★</button>
             </div>
           </div>
@@ -104,14 +155,20 @@ test("keeps card utilities separated and only divides stacked server statistics"
       const utilities = [...server.querySelector(".remote-card-meta").children].map((element) => element.getBoundingClientRect());
       const bounds = server.getBoundingClientRect();
       const dockerStats = getComputedStyle(server.querySelectorAll(".monitoring-stat-section")[1]);
+      const upReference = document.createElement("i");
+      upReference.className = "legend-dot up";
+      document.body.append(upReference);
       output.push({
         name: `server-${width}`,
         serverOverlap: utilities.some((left, index) => utilities.slice(index + 1).some((right) => overlaps(left, right))),
         serverOverflow: utilities.some((item) => item.left < bounds.left || item.right > bounds.right),
         serverTitleWidth: server.querySelector("h3").getBoundingClientRect().width,
+        nestedStatusColor: getComputedStyle(server.querySelector(".server-status .status-indicator")).backgroundColor,
+        expectedUpColor: getComputedStyle(upReference).backgroundColor,
         dividerTop: dockerStats.borderTopWidth,
         dividerLeft: dockerStats.borderLeftWidth
       });
+      upReference.remove();
       server.remove();
     }
     return output;
@@ -125,6 +182,7 @@ test("keeps card utilities separated and only divides stacked server statistics"
     expect(size.serverOverlap, size.name).toBe(false);
     expect(size.serverOverflow, size.name).toBe(false);
     expect(size.serverTitleWidth, size.name).toBeGreaterThan(80);
+    expect(size.nestedStatusColor, size.name).toBe(size.expectedUpColor);
   }
   expect(result.find((item) => item.name === "server-700").dividerTop).not.toBe("0px");
   expect(result.find((item) => item.name === "server-1100").dividerTop).toBe("0px");

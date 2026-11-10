@@ -23,6 +23,7 @@ export async function checkRemoteConnection(connection, { timeoutMs = 3000, envi
   return new Promise((resolve) => {
     const socket = connectImpl({ host: hostname, port });
     let finished = false;
+    let response = Buffer.alloc(0);
     const finish = (status, detail, code) => {
       if (finished) return;
       finished = true;
@@ -39,14 +40,21 @@ export async function checkRemoteConnection(connection, { timeoutMs = 3000, envi
         socket.write(Buffer.from("030000130ee000000000000100080003000000", "hex"));
       }
     });
-    socket.once("data", (data) => {
+    socket.on("data", (data) => {
       if ((connection.probe ?? "tcp") !== "handshake") return;
-      const valid = connection.protocol === "ssh"
-        ? data.toString("ascii", 0, 4) === "SSH-"
-        : data.length >= 4 && data[0] === 0x03 && data[1] === 0x00;
+      response = Buffer.concat([response, data]).subarray(0, 8192);
+      if (connection.protocol === "ssh") {
+        const lines = response.toString("ascii").split(/\r?\n/);
+        if (lines.some((line) => line.startsWith("SSH-"))) {
+          finish("up", "SSH-Handshake erfolgreich", "handshake_ok");
+        }
+        return;
+      }
+      if (response.length < 4) return;
+      const valid = response[0] === 0x03 && response[1] === 0x00;
       finish(valid ? "up" : "down", valid
-        ? `${connection.protocol.toUpperCase()}-Handshake erfolgreich`
-        : `${connection.protocol.toUpperCase()}-Antwort ist ungültig`, valid ? "handshake_ok" : "handshake_invalid");
+        ? "RDP-Handshake erfolgreich"
+        : "RDP-Antwort ist ungültig", valid ? "handshake_ok" : "handshake_invalid");
     });
     socket.once("timeout", () => finish("down", `${hostname}:${port}: Zeitüberschreitung`, "timeout"));
     socket.once("error", (error) => {

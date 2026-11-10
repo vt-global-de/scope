@@ -17,6 +17,10 @@ docker compose exec -T postgres pg_dump -U scope -d scope --format=custom --no-o
 
 Scope applies forward-only, transactional database migrations before accepting traffic. Pull the new image, recreate the application container and watch its logs. `/livez` indicates a running process; `/readyz` succeeds only after inventory validation and a PostgreSQL health check.
 
+### From 1.0.x to 1.1.0
+
+Scope 1.1.0 keeps inventory schema version 1 and does not require Discovery to be configured. Database migrations 3–5 add Discovery snapshots and proposal decisions; they are applied automatically and transactionally. Back up PostgreSQL before the first 1.1.0 start. Existing services, users, history, notification delivery state and personal layouts remain unchanged. Add `discovery.providers` only when the Service Inbox should be enabled.
+
 Never roll an older Scope image back against a database that has already been migrated unless the release notes explicitly permit it. Restore the pre-upgrade database dump for a full rollback.
 
 ## Restore

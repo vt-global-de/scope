@@ -12,6 +12,8 @@ export function createMetricsRegistry({ version = "unknown", enabled = process.e
   const dockerHosts = new Map();
   const certificates = new Map();
   const requests = new Map();
+  const discoveryProviders = new Map();
+  let discoveryDrift = {};
   let remoteSessions = 0;
   let databaseUp = 0;
 
@@ -37,6 +39,11 @@ export function createMetricsRegistry({ version = "unknown", enabled = process.e
     updateCertificates(items) {
       certificates.clear();
       for (const item of items) if (item?.id && Number.isFinite(item.daysRemaining)) certificates.set(item.id, item);
+    },
+    updateDiscovery(discovery) {
+      discoveryProviders.clear();
+      for (const snapshot of discovery?.snapshots ?? []) discoveryProviders.set(snapshot.provider.id, snapshot);
+      discoveryDrift = { ...(discovery?.drift?.summary ?? {}) };
     },
     recordRequest(method, route, statusCode) {
       const key = JSON.stringify([method, route, statusCode]);
@@ -95,6 +102,18 @@ export function createMetricsRegistry({ version = "unknown", enabled = process.e
       );
       for (const certificate of certificates.values()) {
         lines.push(`scope_certificate_days_remaining{${labels({ id: certificate.id, name: certificate.name, hostname: certificate.hostname })}} ${certificate.daysRemaining}`);
+      }
+      lines.push(
+        "# HELP scope_discovery_provider_up Whether a configured discovery provider is reachable.",
+        "# TYPE scope_discovery_provider_up gauge",
+        "# HELP scope_inventory_drift_targets Targets grouped by inventory drift state.",
+        "# TYPE scope_inventory_drift_targets gauge"
+      );
+      for (const snapshot of discoveryProviders.values()) {
+        lines.push(`scope_discovery_provider_up{${labels({ id: snapshot.provider.id, type: snapshot.provider.type, driver: snapshot.provider.driver ?? "native" })}} ${snapshot.status === "up" ? 1 : 0}`);
+      }
+      for (const [state, count] of Object.entries(discoveryDrift)) {
+        lines.push(`scope_inventory_drift_targets{${labels({ state })}} ${count}`);
       }
       lines.push(
         "# HELP scope_http_requests_total HTTP responses served by Scope.",

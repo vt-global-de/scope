@@ -9,6 +9,7 @@
     "title": { "type": "string", "minLength": 1 },
     "subtitle": { "type": "string" },
     "authenticate": { "type": "boolean" },
+    "discovery": { "$ref": "#/$defs/discovery" },
     "menu": {
       "type": "object",
       "additionalProperties": false,
@@ -28,13 +29,44 @@
       "properties": { "width": { "enum": ["xsmall", "small", "medium", "large", "full"] } }
     },
     "check": { "oneOf": [{ "type": "boolean" }, { "type": "object" }] },
+    "health": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "pattern": "^/" },
+        "method": { "enum": ["HEAD", "GET"] },
+        "expected-status": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 100, "maximum": 599 } },
+        "follow-redirects": { "type": "boolean" },
+        "timeout-ms": { "type": "integer", "minimum": 250, "maximum": 60000 }
+      }
+    },
+    "discoveryProvider": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["docker", "reverse-proxy"] },
+        "driver": { "enum": ["traefik", "caddy", "nginx-proxy-manager"] },
+        "enabled": { "type": "boolean" }, "authoritative": { "type": "boolean" },
+        "server": { "$ref": "#/$defs/identifier" }, "url": { "type": "string", "format": "uri" },
+        "depends-on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
+        "token-env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }, "token-prefix": { "type": "string" },
+        "timeout-ms": { "type": "integer", "minimum": 250, "maximum": 60000 },
+        "reject-unauthorized": { "type": "boolean" }
+      }
+    },
+    "discovery": {
+      "type": "object", "additionalProperties": false, "required": ["providers"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "providers": { "type": "array", "items": { "$ref": "#/$defs/discoveryProvider" } }
+      }
+    },
     "serviceDefaults": {
       "type": "object",
       "properties": {
         "type": { "const": "link" }, "description": { "type": "string" }, "icon": { "type": "string" },
         "tags": { "$ref": "#/$defs/tags" }, "favorite": { "type": "boolean" }, "scope": { "$ref": "#/$defs/scope" },
         "depends-on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
-        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }
+        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }, "health": { "$ref": "#/$defs/health" }
       },
       "additionalProperties": false
     },
@@ -45,7 +77,7 @@
         "type": { "const": "link" }, "description": { "type": "string" }, "icon": { "type": "string" },
         "tags": { "$ref": "#/$defs/tags" }, "favorite": { "type": "boolean" }, "scope": { "$ref": "#/$defs/scope" },
         "depends-on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
-        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }
+        "certificates": { "$ref": "#/$defs/check" }, "dns": { "$ref": "#/$defs/check" }, "health": { "$ref": "#/$defs/health" }
       }
     },
     "serviceCategory": {
@@ -119,11 +151,39 @@
       }
     },
     "notificationChannel": {
-      "type": "object", "required": ["id", "name", "type"],
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "type"],
       "properties": {
         "id": { "$ref": "#/$defs/identifier" }, "name": { "type": "string", "minLength": 1 },
         "type": { "enum": ["smtp", "discord"] }, "enabled": { "type": "boolean" },
         "hostname": {}, "port": {}, "secure": {}, "username": {}, "password": {}, "from": {}, "to": {}, "webhook-url": {}
+      }
+    },
+    "notificationRule": {
+      "type": "object", "additionalProperties": false, "required": ["id", "events", "channels"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "events": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "enum": ["down", "recovered"] }
+        },
+        "channels": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "delay-seconds": { "type": "integer", "minimum": 0, "maximum": 86400 }
+      }
+    },
+    "notificationMaintenanceWindow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target-type", "target-id", "until"],
+      "properties": {
+        "target-type": { "enum": ["service", "remote", "monitoring", "certificate", "dns"] },
+        "target-id": { "type": "string", "minLength": 1 },
+        "from": { "type": "string", "format": "date-time" },
+        "until": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" }
       }
     },
     "notificationsSection": {
@@ -131,8 +191,8 @@
       "properties": {
         "subtitle": { "type": "string" },
         "channels": { "type": "array", "items": { "$ref": "#/$defs/notificationChannel" } },
-        "rules": { "type": "array", "items": { "type": "object" } },
-        "maintenance-windows": { "type": "array", "items": { "type": "object" } }
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/notificationRule" } },
+        "maintenance-windows": { "type": "array", "items": { "$ref": "#/$defs/notificationMaintenanceWindow" } }
       }
     }
   }

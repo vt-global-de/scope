@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { validateCertificates } from "./certificates.mjs";
 import { parseConfigText, validateConfig } from "./config.mjs";
 import { validateDnsChecks } from "./dns-checks.mjs";
+import { validateDiscoveryConfig } from "./discovery-config.mjs";
 import { validateNotificationConfig } from "./notifications-config.mjs";
 import { validateServersConfig } from "./servers-config.mjs";
 
@@ -9,7 +10,7 @@ const isNonEmptyString = (value) => typeof value === "string" && value.trim().le
 const serviceGroups = (inventory) => inventory.menu.services?.groups ?? [];
 const serverGroups = (inventory) => inventory.menu.server?.groups ?? [];
 const serviceDefaultKeys = [
-  "type", "description", "icon", "tags", "favorite", "scope", "depends-on", "certificates", "dns"
+  "type", "description", "icon", "tags", "favorite", "scope", "depends-on", "certificates", "dns", "health"
 ];
 const serverDefaultKeys = [
   "description", "tags", "favorite", "scope", "enabled", "monitoring", "remote", "certificates", "dns"
@@ -174,12 +175,14 @@ export function inventoryCapabilities(inventory, environment = process.env) {
     servers: inventory.menu.server !== undefined,
     certificates: inventoryCertificates(inventory).length > 0,
     dns: inventoryDnsChecks(inventory).length > 0,
-    notifications: inventory.menu.notifications !== undefined
+    notifications: inventory.menu.notifications !== undefined,
+    inventory: inventory.discovery?.enabled !== false
+      && (inventory.discovery?.providers ?? []).some((provider) => provider.enabled !== false)
   };
   const capabilities = Object.fromEntries(
     Object.entries(discovered).map(([name, available]) => [
       name,
-      ["certificates", "dns"].includes(name) ? available : featureEnabled(environment, name, available)
+      ["certificates", "dns", "inventory"].includes(name) ? available : featureEnabled(environment, name, available)
     ])
   );
   capabilities.monitoring = capabilities.servers
@@ -307,7 +310,8 @@ export function validateInventoryConfig(inventory) {
   if (inventory.environments !== undefined) {
     throw new Error("environments wurde durch menu.services.groups und menu.server.groups ersetzt.");
   }
-  assertKnownKeys(inventory, ["version", "title", "subtitle", "authenticate", "menu"], "inventory");
+  assertKnownKeys(inventory, ["version", "title", "subtitle", "authenticate", "discovery", "menu"], "inventory");
+  validateDiscoveryConfig(inventory.discovery);
 
   const validateGroup = (group, index, menuName) => {
     const path = `menu.${menuName}.groups[${index}]`;
@@ -354,6 +358,9 @@ export function validateInventoryConfig(inventory) {
       if (value !== undefined && typeof value !== "boolean" && !isPlainObject(value)) {
         throw new Error(`${path}.${feature} muss true, false oder ein Objekt sein.`);
       }
+    }
+    if (defaults.health !== undefined && !isPlainObject(defaults.health)) {
+      throw new Error(`${path}.health muss ein Objekt sein.`);
     }
   };
 
@@ -409,6 +416,16 @@ export function validateInventoryConfig(inventory) {
   });
 
   const serverIds = new Set(serverEntries(inventory).map(({ server }) => server.id));
+  for (const [index, provider] of (inventory.discovery?.providers ?? []).entries()) {
+    if (provider.type === "docker" && !serverIds.has(provider.server)) {
+      throw new Error(`discovery.providers[${index}].server verweist auf unbekannten Server ${provider.server}.`);
+    }
+    for (const dependency of provider["depends-on"] ?? []) {
+      if (!serverIds.has(dependency)) {
+        throw new Error(`discovery.providers[${index}].depends-on verweist auf unbekannten Server ${dependency}.`);
+      }
+    }
+  }
   for (const { groupIndex, panelIndex, itemIndex, service } of serviceEntries(inventory)) {
     for (const dependency of service["depends-on"] ?? []) {
       if (!serverIds.has(dependency)) {

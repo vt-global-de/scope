@@ -50,3 +50,20 @@ test("keeps an actual server error down after GET verification", async () => {
   assert.equal(result.status, "down");
   assert.equal(result.httpStatus, 503);
 });
+
+test("supports explicit methods, status codes and redirects", async () => {
+  let options;
+  const result = await checkUrl("https://example.com", {
+    method: "GET",
+    expectedStatuses: [204],
+    followRedirects: true,
+    fetchImpl: async (_url, requestOptions) => {
+      options = requestOptions;
+      return { status: 204 };
+    }
+  });
+  assert.equal(result.status, "up");
+  assert.equal(options.method, "GET");
+  assert.equal(options.redirect, "follow");
+  assert.equal(typeof result.responseTimeMs, "number");
+});

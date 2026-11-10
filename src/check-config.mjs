@@ -20,7 +20,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const services = toServicesConfig(inventory).groups.flatMap((group) => group.panels.flatMap((panel) => panel.items));
     const servers = toServersConfig(inventory).servers;
     console.log(`Scope inventory valid: ${file}`);
-    console.log(`Schema v${inventory.version}: ${services.length} services, ${servers.length} servers, ${inventoryCertificates(inventory).length} certificate checks, ${inventoryDnsChecks(inventory).length} DNS checks`);
+    console.log(`Schema v${inventory.version}: ${services.length} services, ${servers.length} servers, ${inventoryCertificates(inventory).length} certificate checks, ${inventoryDnsChecks(inventory).length} DNS checks, ${inventory.discovery?.providers?.length ?? 0} discovery providers`);
   } catch (error) {
     console.error(`Scope inventory invalid: ${error.message}`);
     process.exitCode = 1;

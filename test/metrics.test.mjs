@@ -12,6 +12,10 @@ test("renders Prometheus target, database and request metrics", () => {
     containersRunning: 2, containersStopped: 1, containersTotal: 3, volumes: 4, networks: 5, images: 6
   } }]);
   metrics.updateCertificates([{ id: "tls", name: "TLS", hostname: "scope.example", daysRemaining: 42 }]);
+  metrics.updateDiscovery({
+    snapshots: [{ provider: { id: "docker-local", type: "docker" }, status: "up" }],
+    drift: { summary: { managed: 2, missing: 1 } }
+  });
   metrics.recordRequest("GET", "/api/status", 200);
   metrics.recordRemoteSession();
   const output = metrics.render();
@@ -24,4 +28,6 @@ test("renders Prometheus target, database and request metrics", () => {
   assert.match(output, /scope_docker_cpu_percent\{id="docker",name="Docker"\} 12\.5/);
   assert.match(output, /scope_docker_containers\{id="docker",name="Docker",state="running"\} 2/);
   assert.match(output, /scope_certificate_days_remaining\{id="tls",name="TLS",hostname="scope\.example"\} 42/);
+  assert.match(output, /scope_discovery_provider_up\{id="docker-local",type="docker",driver="native"\} 1/);
+  assert.match(output, /scope_inventory_drift_targets\{state="missing"\} 1/);
 });

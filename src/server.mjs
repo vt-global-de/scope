@@ -2,9 +2,13 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stringify as stringifyYaml } from "yaml";
 import { createCertificateChecker } from "./certificates.mjs";
 import { createDatabase } from "./database.mjs";
 import { createDnsChecker } from "./dns-checks.mjs";
+import { diagnoseServer, diagnoseUrl } from "./diagnostics.mjs";
+import { createDiscoveryManager, discoveryProviderDependencies } from "./discovery.mjs";
+import { mergeInventoryYaml, orderServiceFields, prepareDiscoveredService } from "./discovery-export.mjs";
 import {
   categoryIdentifier, createInventoryConfigStore, inventoryCapabilities, inventoryCertificates, inventoryDnsChecks,
   toServersConfig, toServicesConfig
@@ -110,6 +114,141 @@ const getMonitoring = createMonitoringCollector(getMonitoringConfig, {
   ttlMs: Number.parseInt(process.env.MONITORING_CACHE_TTL_MS ?? "30000", 10),
   concurrency: checkConcurrency
 });
+const getDiscovery = createDiscoveryManager(getInventory, {
+  timeoutMs: Number.parseInt(process.env.DISCOVERY_TIMEOUT_MS ?? "5000", 10),
+  ttlMs: Number.parseInt(process.env.DISCOVERY_CACHE_TTL_MS ?? "60000", 10)
+});
+
+function exportableSuggestion(suggestion) {
+  const { providerId, newCategory, newGroup, ...service } = suggestion;
+  return orderServiceFields(Object.fromEntries(Object.entries(service).filter(([, value]) =>
+    value !== "" && value !== undefined)));
+}
+
+function reviewedSuggestion(discovered, input, { newCategory, newGroup, serverIds = new Set() } = {}) {
+  const identifier = String(input?.id ?? discovered.id).trim().toLowerCase();
+  const name = String(input?.name ?? discovered.name).trim();
+  const description = String(input?.description ?? discovered.description ?? "").trim();
+  const icon = String(input?.icon ?? discovered.icon ?? "").trim();
+  const dependencies = input?.["depends-on"] ?? discovered["depends-on"] ?? [];
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(identifier)) throw new HttpError(400, "Die Service-ID ist ungültig.");
+  if (!name || name.length > 120) throw new HttpError(400, "Der Service-Name muss zwischen 1 und 120 Zeichen lang sein.");
+  if (description.length > 240) throw new HttpError(400, "Die Beschreibung darf höchstens 240 Zeichen lang sein.");
+  if (icon.length > 240 || /[\r\n]/.test(icon)) throw new HttpError(400, "Das Icon ist ungültig.");
+  if (!Array.isArray(dependencies) || dependencies.some((id) => typeof id !== "string" || !serverIds.has(id))
+    || new Set(dependencies).size !== dependencies.length) {
+    throw new HttpError(400, "depends-on enthält unbekannte oder doppelte Server-IDs.");
+  }
+  return {
+    id: identifier, name,
+    ...(description ? { description } : {}),
+    url: discovered.url,
+    ...(icon ? { icon } : {}),
+    "depends-on": dependencies,
+    providerId: discovered.providerId,
+    ...(newCategory ? { newCategory } : {}),
+    ...(newGroup ? { newGroup } : {})
+  };
+}
+
+async function persistDiscovery(discovery) {
+  metrics.updateDiscovery(discovery);
+  await Promise.all([
+    database.recordDiscoverySnapshot(discovery),
+    database.syncDiscoveryProposals(discovery.drift?.suggestions ?? [])
+  ]);
+  return discovery;
+}
+
+function discoveryDestinations(inventory) {
+  return (inventory.menu.services?.groups ?? []).flatMap((group, groupIndex) => group.categories.map((category, categoryIndex) => ({
+    groupId: group.id,
+    groupName: group.name,
+    categoryId: categoryIdentifier(category, categoryIndex),
+    categoryName: category.name,
+    groupIndex,
+    categoryIndex
+  })));
+}
+
+function discoveryGroups(inventory) {
+  return (inventory.menu.services?.groups ?? []).map((group, groupIndex) => ({
+    groupId: group.id, groupName: group.name, groupIndex
+  }));
+}
+
+async function discoveryPayload(discovery) {
+  const proposals = await database.listDiscoveryProposals();
+  const review = { pending: 0, accepted: 0, rejected: 0 };
+  proposals.forEach((proposal) => {
+    const state = proposal.state === "ignored" ? "rejected" : proposal.state;
+    review[state] = (review[state] ?? 0) + 1;
+  });
+  const proposalStates = new Map(proposals.map((proposal) => [
+    `${proposal.suggestion.providerId}:${proposal.suggestion.url}`, proposal.state
+  ]));
+  return {
+    ...discovery,
+    providerInventory: {
+      ...discovery.providerInventory,
+      providers: discovery.providerInventory.providers.map((provider) => ({
+        ...provider,
+        available: provider.available.map((service) => ({
+          ...service,
+          reviewState: proposalStates.get(`${provider.provider.id}:${service.url}`) === "ignored"
+            ? "rejected"
+            : proposalStates.get(`${provider.provider.id}:${service.url}`) ?? "pending"
+        }))
+      })),
+      summary: { ...discovery.providerInventory.summary, review }
+    },
+    history: await database.discoveryHistory({ limit: 20 })
+  };
+}
+
+async function discoveryExport(inventory, format) {
+  const proposals = (await database.listDiscoveryProposals()).filter((proposal) => proposal.state === "accepted");
+  const destinations = discoveryDestinations(inventory);
+  const changes = proposals.map((proposal) => {
+    const newCategory = proposal.suggestion.newCategory;
+    const newGroup = proposal.suggestion.newGroup;
+    const destination = destinations.find((item) => item.groupId === proposal.targetGroup && item.categoryId === proposal.targetCategory)
+      ?? (newGroup && newCategory ? {
+        groupId: newGroup.id, groupName: newGroup.name, groupIndex: null, isNewGroup: true,
+        categoryId: newCategory.id, categoryName: newCategory.name, categoryIndex: null, isNew: true
+      } : newCategory ? {
+        ...discoveryGroups(inventory).find((item) => item.groupId === proposal.targetGroup),
+        categoryId: newCategory.id, categoryName: newCategory.name, categoryIndex: null, isNew: true
+      } : undefined);
+    if (!destination) throw new Error(`Discovery-Ziel für Vorschlag ${proposal.id} ist nicht mehr verfügbar.`);
+    const provider = (inventory.discovery?.providers ?? []).find((item) => item.id === proposal.suggestion.providerId);
+    const suggestion = Object.hasOwn(proposal.suggestion, "depends-on") || !provider
+      ? proposal.suggestion
+      : { ...proposal.suggestion, "depends-on": discoveryProviderDependencies(inventory, provider) };
+    return {
+      ...proposal,
+      destination,
+      service: prepareDiscoveredService(inventory, destination, exportableSuggestion(suggestion))
+    };
+  });
+  if (format === "review") {
+    return { version: 1, generatedAt: new Date().toISOString(), changes: changes.map((item) => ({
+      group: item.destination.groupId,
+      ...(item.destination.isNewGroup ? { groupName: item.destination.groupName } : {}),
+      category: item.destination.categoryId,
+      ...(item.destination.isNew ? { categoryName: item.destination.categoryName } : {}),
+      service: item.service
+    })) };
+  }
+  const additions = changes.filter((change) => {
+    if (change.destination.isNewGroup) return true;
+    if (change.destination.isNew) return Number.isInteger(change.destination.groupIndex);
+    const category = inventory.menu.services.groups[change.destination.groupIndex]
+      ?.categories[change.destination.categoryIndex];
+    return category && !category.services.some((service) => service.id === change.service.id || service.url === change.service.url);
+  });
+  return mergeInventoryYaml(await readFile(inventoryConfigFile, "utf8"), additions);
+}
 const getCertificateStatuses = createCertificateChecker(async () => {
   const inventory = await getInventory();
   return inventoryCapabilities(inventory).certificates ? inventoryCertificates(inventory) : [];
@@ -294,6 +433,9 @@ async function recordStatusSnapshot() {
   if (capabilities.monitoring) checks.push(getMonitoring().then((items) => persistStatuses("monitoring", items)));
   if (capabilities.certificates) checks.push(getCertificateStatuses().then((items) => persistStatuses("certificate", items)));
   if (capabilities.dns) checks.push(getDnsStatuses().then((items) => persistStatuses("dns", items)));
+  if (capabilities.inventory) checks.push(getDiscovery().then(async (discovery) => {
+    await persistDiscovery(discovery);
+  }));
   await Promise.all(checks);
 }
 
@@ -611,6 +753,94 @@ export function buildServer() {
         sendJson(response, 200, await launchConnection(launchMatch[1], request));
         return;
       }
+      if (request.method === "POST" && url.pathname === "/api/inventory/refresh") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        if (!inventoryCapabilities(inventory).inventory) throw new HttpError(404, "Discovery ist nicht konfiguriert.");
+        const discovery = await persistDiscovery(await getDiscovery({ refresh: true }));
+        sendJson(response, 200, await discoveryPayload(discovery));
+        return;
+      }
+      const proposalMatch = url.pathname.match(/^\/api\/admin\/discovery-proposals\/(\d+)$/);
+      if (request.method === "PUT" && proposalMatch) {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        const body = await readJson(request);
+        if (!["accepted", "rejected"].includes(body.state)) throw new HttpError(400, "Ungültiger Review-Status.");
+        const destinations = discoveryDestinations(inventory);
+        const groups = discoveryGroups(inventory);
+        const proposals = await database.listDiscoveryProposals();
+        let newCategory;
+        let newGroup;
+        if (body.state === "accepted" && body.newGroup) {
+          const id = String(body.newGroup.id ?? "").trim().toLowerCase();
+          const name = String(body.newGroup.name ?? "").trim();
+          if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) throw new HttpError(400, "Die neue Area-ID ist ungültig.");
+          if (!name || name.length > 120) throw new HttpError(400, "Der neue Areaname muss zwischen 1 und 120 Zeichen lang sein.");
+          if (groups.some((item) => item.groupId === id)) throw new HttpError(409, "Eine Area mit dieser ID existiert bereits.");
+          const acceptedDraft = proposals.find((item) => item.state === "accepted" && item.suggestion.newGroup?.id === id);
+          newGroup = { id, name: acceptedDraft?.suggestion.newGroup.name ?? name };
+        }
+        if (body.state === "accepted" && (body.newCategory || newGroup)) {
+          if (!body.newCategory || typeof body.newCategory !== "object") {
+            throw new HttpError(400, "Eine neue Area benötigt ein neues Panel.");
+          }
+          const id = String(body.newCategory.id ?? "").trim().toLowerCase();
+          const name = String(body.newCategory.name ?? "").trim();
+          const group = newGroup ?? groups.find((item) => item.groupId === body.targetGroup);
+          if (!group) throw new HttpError(400, "Die gewählte Service-Gruppe existiert nicht.");
+          if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) throw new HttpError(400, "Die neue Kategorie-ID ist ungültig.");
+          if (!name || name.length > 120) throw new HttpError(400, "Der neue Kategoriename muss zwischen 1 und 120 Zeichen lang sein.");
+          if (!newGroup && destinations.some((item) => item.groupId === group.groupId && item.categoryId === id)) {
+            throw new HttpError(409, "Eine Kategorie mit dieser ID existiert in der gewählten Gruppe bereits.");
+          }
+          const groupId = group.groupId ?? group.id;
+          const acceptedDraft = proposals.find((item) => item.state === "accepted"
+            && item.targetGroup === groupId && item.suggestion.newCategory?.id === id);
+          newCategory = { id, name: acceptedDraft?.suggestion.newCategory.name ?? name, groupId };
+        }
+        const selectedDestination = newGroup && newCategory
+          ? { groupId: newGroup.id, groupName: newGroup.name, groupIndex: null, isNewGroup: true, categoryId: newCategory.id, categoryName: newCategory.name, categoryIndex: null, isNew: true }
+          : newCategory
+          ? { ...groups.find((item) => item.groupId === body.targetGroup), categoryId: newCategory.id, categoryName: newCategory.name, categoryIndex: null, isNew: true }
+          : destinations.find((item) => item.groupId === body.targetGroup && item.categoryId === body.targetCategory);
+        if (body.state === "accepted" && !selectedDestination) {
+          throw new HttpError(400, "Die gewählte Zielkategorie existiert nicht.");
+        }
+        const proposal = proposals.find((item) => item.id === proposalMatch[1]);
+        if (!proposal) throw new HttpError(404, "Discovery-Vorschlag nicht gefunden.");
+        const suggestion = body.state === "accepted"
+          ? reviewedSuggestion(proposal.suggestion, body.suggestion, {
+            newCategory, newGroup,
+            serverIds: new Set(toServersConfig(inventory).servers.map((server) => server.id))
+          })
+          : undefined;
+        if (suggestion && selectedDestination) {
+          const category = selectedDestination.isNew ? null
+            : inventory.menu.services.groups[selectedDestination.groupIndex]?.categories[selectedDestination.categoryIndex];
+          const configuredConflict = category?.services?.some((service) => service.id === suggestion.id && service.url !== suggestion.url);
+          const reviewConflict = proposals.some((item) => item.id !== proposal.id && item.state === "accepted"
+            && item.targetGroup === selectedDestination.groupId && item.targetCategory === selectedDestination.categoryId
+            && item.suggestion.id === suggestion.id && item.suggestion.url !== suggestion.url);
+          if (configuredConflict || reviewConflict) {
+            throw new HttpError(409, "Die Service-ID wird in der gewählten Zielkategorie bereits verwendet.");
+          }
+        }
+        const id = await database.updateDiscoveryProposal(proposalMatch[1], {
+          state: body.state,
+          targetGroup: body.state === "accepted" ? selectedDestination.groupId : "",
+          targetCategory: body.state === "accepted" ? selectedDestination.categoryId : "",
+          suggestion,
+          reviewedBy: user?.username ?? "anonymous"
+        });
+        if (!id) throw new HttpError(404, "Discovery-Vorschlag nicht gefunden.");
+        await database.recordAudit({
+          actor: user?.username ?? "anonymous", action: `discovery.proposal.${body.state}`,
+          targetType: "discovery-proposal", targetId: id, remoteAddress: remoteAddress(request)
+        });
+        sendJson(response, 200, { updated: true, id });
+        return;
+      }
       const closeMatch = url.pathname.match(/^\/api\/remote\/sessions\/([A-Za-z0-9_-]+)$/);
       if (request.method === "DELETE" && closeMatch) {
         const username = await getRequestUser(request);
@@ -695,6 +925,122 @@ export function buildServer() {
         const items = await getStatuses();
         await persistStatuses("service", items);
         sendJson(response, 200, { checkedAt: new Date().toISOString(), items });
+        return;
+      }
+      if (url.pathname === "/api/inventory") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        if (!inventoryCapabilities(inventory).inventory) throw new HttpError(404, "Discovery ist nicht konfiguriert.");
+        const discovery = await persistDiscovery(await getDiscovery());
+        sendJson(response, 200, await discoveryPayload(discovery));
+        return;
+      }
+      if (url.pathname === "/api/inventory/suggestions") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        if (!inventoryCapabilities(inventory).inventory) throw new HttpError(404, "Discovery ist nicht konfiguriert.");
+        const discovery = await getDiscovery();
+        response.setHeader("Content-Disposition", "attachment; filename=scope-inventory-suggestions.yaml");
+        sendText(response, 200, stringifyYaml({
+          categories: [{ id: "discovered-routes", name: "Discovered routes", services: discovery.drift.suggestions.map(exportableSuggestion) }]
+        }), "application/yaml; charset=utf-8");
+        return;
+      }
+      if (url.pathname === "/api/admin/discovery-proposals") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        if (!inventoryCapabilities(inventory).inventory) throw new HttpError(404, "Discovery ist nicht konfiguriert.");
+        const discovery = await persistDiscovery(await getDiscovery());
+        const proposals = await database.listDiscoveryProposals();
+        const destinations = discoveryDestinations(inventory);
+        const groups = discoveryGroups(inventory);
+        for (const proposal of proposals.filter((item) => item.state === "accepted")) {
+          const newGroup = proposal.suggestion.newGroup;
+          const newCategory = proposal.suggestion.newCategory;
+          if (newGroup && !groups.some((item) => item.groupId === newGroup.id)) {
+            groups.push({ groupId: newGroup.id, groupName: newGroup.name, groupIndex: null, isDraft: true });
+          }
+          if (newCategory && !destinations.some((item) => item.groupId === proposal.targetGroup && item.categoryId === newCategory.id)) {
+            const group = groups.find((item) => item.groupId === proposal.targetGroup);
+            destinations.push({
+              groupId: proposal.targetGroup,
+              groupName: group?.groupName ?? newGroup?.name ?? proposal.targetGroup,
+              groupIndex: group?.groupIndex ?? null,
+              categoryId: newCategory.id,
+              categoryName: newCategory.name,
+              categoryIndex: null,
+              isDraft: true,
+              ...(newGroup ? { newGroup } : {}),
+              newCategory
+            });
+          }
+        }
+        sendJson(response, 200, {
+          proposals,
+          destinations,
+          groups,
+          checkedAt: discovery.checkedAt,
+          providers: discovery.snapshots.map((snapshot) => ({
+            id: snapshot.provider.id,
+            name: snapshot.provider.name ?? snapshot.provider.id,
+            type: snapshot.provider.type,
+            driver: snapshot.provider.driver,
+            status: snapshot.status,
+            checkedAt: snapshot.checkedAt,
+            error: snapshot.error ?? "",
+            routes: snapshot.routes.length,
+            targets: snapshot.targets.length,
+            dependsOn: snapshot.provider.dependsOn ?? []
+          })),
+          servers: toServersConfig(inventory).servers.map((server) => ({ id: server.id, name: server.name }))
+        });
+        return;
+      }
+      if (url.pathname === "/api/admin/discovery-export") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        if (!inventoryCapabilities(inventory).inventory) throw new HttpError(404, "Discovery ist nicht konfiguriert.");
+        const format = url.searchParams.get("format") === "review" ? "review" : "full";
+        const filename = format === "review" ? "scope-discovery-review.yaml" : "scope-inventory-merged.yaml";
+        response.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+        const exported = await discoveryExport(inventory, format);
+        sendText(response, 200, format === "review" ? stringifyYaml(exported) : exported, "application/yaml; charset=utf-8");
+        return;
+      }
+      if (url.pathname === "/api/diagnostics/service") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        const id = url.searchParams.get("id");
+        const services = (await getConfig()).groups.flatMap((group) => group.panels.flatMap((panel) =>
+          panel.items.map((service) => ({ ...service, targetId: `${group.id}:${service.id ?? service.url}` }))
+        ));
+        const service = services.find((candidate) => candidate.targetId === id);
+        if (!service) throw new HttpError(404, "Service nicht gefunden.");
+        let diagnosticUrl = service.url;
+        if (service.health?.path) {
+          const parsed = new URL(diagnosticUrl);
+          parsed.pathname = service.health.path;
+          diagnosticUrl = parsed.toString();
+        }
+        sendJson(response, 200, await diagnoseUrl(diagnosticUrl, {
+          timeoutMs: service.health?.["timeout-ms"] ?? Number.parseInt(process.env.STATUS_CHECK_TIMEOUT_MS ?? "4000", 10),
+          checkOptions: {
+            method: service.health?.method,
+            expectedStatuses: service.health?.["expected-status"],
+            followRedirects: service.health?.["follow-redirects"] === true,
+            rejectUnauthorized: service.certificates?.["reject-unauthorized"] !== false
+          }
+        }));
+        return;
+      }
+      if (url.pathname === "/api/diagnostics/server") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        const server = (await getServersConfig()).servers.find((candidate) => candidate.id === url.searchParams.get("id"));
+        if (!server) throw new HttpError(404, "Server nicht gefunden.");
+        sendJson(response, 200, await diagnoseServer(server, {
+          timeoutMs: Number.parseInt(process.env.REMOTE_STATUS_CHECK_TIMEOUT_MS ?? "4000", 10)
+        }));
         return;
       }
       if (url.pathname === "/api/remote/connections") {

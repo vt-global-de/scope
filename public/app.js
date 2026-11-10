@@ -7,6 +7,7 @@ const overviewView = document.querySelector("#overview-view");
 const dashboardView = document.querySelector("#dashboard-view");
 const monitoringView = document.querySelector("#monitoring-view");
 const notificationsView = document.querySelector("#notifications-view");
+const adminView = document.querySelector("#admin-view");
 const sessionView = document.querySelector("#session-view");
 const viewTitleElement = document.querySelector("#view-title");
 const viewSubtitleElement = document.querySelector("#view-subtitle");
@@ -25,10 +26,35 @@ const serverGroupNavElement = document.querySelector("#server-group-nav");
 const dashboardNavLink = document.querySelector("#dashboard-nav-link");
 const serversNavLink = document.querySelector("#servers-nav-link");
 const notificationsNavLink = document.querySelector("#notifications-nav-link");
+const adminNavLink = document.querySelector("#admin-nav-link");
+const adminTabs = document.querySelector("#admin-tabs");
+const adminUsersPane = document.querySelector("#admin-users-pane");
+const adminAuditPane = document.querySelector("#admin-audit-pane");
+const adminStatus = document.querySelector("#admin-status");
+const serviceInboxButton = document.querySelector("#service-inbox-button");
+const serviceInboxCount = document.querySelector("#service-inbox-count");
+const serviceInboxDialog = document.querySelector("#service-inbox-dialog");
+const serviceInboxClose = document.querySelector("#service-inbox-close");
+const serviceInboxRefresh = document.querySelector("#service-inbox-refresh");
+const serviceInboxCopy = document.querySelector("#service-inbox-copy");
+const serviceInboxTabs = document.querySelector("#service-inbox-tabs");
+const serviceInboxServicesView = document.querySelector("#service-inbox-services-view");
+const serviceInboxProvidersView = document.querySelector("#service-inbox-providers-view");
+const serviceInboxProviders = document.querySelector("#service-inbox-providers");
+const serviceInboxError = document.querySelector("#service-inbox-error");
+const serviceInboxStatus = document.querySelector("#service-inbox-status");
+const proposalListElement = document.querySelector("#proposal-list");
+const proposalFiltersElement = document.querySelector("#proposal-filters");
+const proposalSearchElement = document.querySelector("#proposal-search");
 const dashboardErrorElement = document.querySelector("#dashboard-error");
 const monitoringErrorElement = document.querySelector("#monitoring-error");
 const notificationsErrorElement = document.querySelector("#notifications-error");
 const notificationsGridElement = document.querySelector("#notifications-grid");
+const diagnosticsDialog = document.querySelector("#diagnostics-dialog");
+const diagnosticsTitle = document.querySelector("#diagnostics-title");
+const diagnosticsSummary = document.querySelector("#diagnostics-summary");
+const diagnosticsSteps = document.querySelector("#diagnostics-steps");
+const diagnosticsClose = document.querySelector("#diagnostics-close");
 const notificationHistorySection = document.querySelector("#notification-history-section");
 const notificationHistoryList = document.querySelector("#notification-history-list");
 const maintenanceSection = document.querySelector("#maintenance-section");
@@ -50,7 +76,6 @@ const scopeMembershipElement = document.querySelector("#scope-membership");
 const scopeTrendElement = document.querySelector("#scope-trend");
 const globalSearchInput = document.querySelector("#global-search-input");
 const globalSearchResults = document.querySelector("#global-search-results");
-const densityToggle = document.querySelector("#density-toggle");
 const sidebarToggle = document.querySelector("#sidebar-toggle");
 const serviceLayoutToggle = document.querySelector("#service-layout-toggle");
 const serviceLayoutToolbar = document.querySelector("#service-layout-toolbar");
@@ -67,6 +92,9 @@ const themeToggle = document.querySelector("#theme-toggle");
 const languageToggle = document.querySelector("#language-toggle");
 const logoutButton = document.querySelector("#logout-button");
 const settingsButton = document.querySelector("#settings-button");
+const profileMenu = document.querySelector("#profile-menu");
+const profileSettingsButton = document.querySelector("#profile-settings-button");
+const profileAvatar = document.querySelector("#profile-avatar");
 const settingsUserElement = document.querySelector("#settings-user");
 const settingsDialog = document.querySelector("#settings-dialog");
 const settingsDisplayName = document.querySelector("#settings-display-name");
@@ -135,11 +163,14 @@ let latestRemoteStatuses = [];
 let latestCertificates = [];
 let latestDnsChecks = [];
 let latestNotificationChannels = [];
+let latestDiscoveryProposals = { proposals: [], destinations: [], groups: [], providers: [], servers: [] };
+let proposalFilter = "pending";
+let proposalSearch = "";
 let latestHistory = { summary: { total: 0, up: 0, down: 0 }, events: [], targets: [], timeline: [] };
 let activeSession;
 let menuPresentation = {};
 let iconBaseUrl = defaultIconBaseUrl;
-let appCapabilities = { services: true, servers: true, certificates: false, dns: false, notifications: false };
+let appCapabilities = { services: true, servers: true, certificates: false, dns: false, notifications: false, inventory: false, administration: false };
 let locale = "en";
 let activeServiceTag = "";
 let activeServerTag = "";
@@ -170,7 +201,11 @@ const auditActionTranslationKeys = Object.freeze({
   "remote.launched": "auditActionRemoteLaunched",
   "remote.closed": "auditActionRemoteClosed",
   "maintenance.created": "auditActionMaintenanceCreated",
-  "maintenance.deleted": "auditActionMaintenanceDeleted"
+  "maintenance.deleted": "auditActionMaintenanceDeleted",
+  "discovery.proposal.accepted": "auditActionDiscoveryAccepted",
+  "discovery.proposal.rejected": "auditActionDiscoveryRejected",
+  "discovery.proposal.ignored": "auditActionDiscoveryIgnored",
+  "discovery.proposal.pending": "auditActionDiscoveryReset"
 });
 
 document.title = "Scope";
@@ -300,9 +335,13 @@ function updateSidebarControls() {
     if (collapsed) link.title = navigationLabel;
     else link.removeAttribute("title");
   });
-  const settingsLabel = t("openSettings");
+  const settingsLabel = t("openAccountMenu");
   settingsButton.setAttribute("aria-label", settingsLabel);
   settingsButton.title = settingsLabel;
+  const administrationLabel = t("administration");
+  adminNavLink.setAttribute("aria-label", administrationLabel);
+  if (collapsed) adminNavLink.title = administrationLabel;
+  else adminNavLink.removeAttribute("title");
 }
 
 function setSidebar(state, persist = false) {
@@ -321,6 +360,7 @@ function rerenderLocalizedContent() {
   }
   if (monitoringHosts.length || remoteConnections.length) renderMonitoring(parseRoute().group);
   if (latestNotificationChannels.length) renderNotifications(latestNotificationChannels);
+  if (latestDiscoveryProposals.proposals.length || latestDiscoveryProposals.destinations.length) renderDiscoveryProposals(latestDiscoveryProposals);
   renderOverview();
   renderSearchResults();
   if (!activeSession) setActiveModule(parseRoute().module);
@@ -363,6 +403,7 @@ languageToggle.addEventListener("click", () => {
   setDensity(document.documentElement.dataset.density || "comfortable");
 });
 logoutButton.addEventListener("click", async () => {
+  closeProfileMenu();
   logoutButton.disabled = true;
   try { await fetch("/api/auth/logout", { method: "POST" }); } finally {
     for (const key of [themeStorageKey, languageStorageKey, densityStorageKey, sidebarStorageKey, favoritesStorageKey, panelLayoutStorageKey]) {
@@ -385,10 +426,6 @@ try { storedDensity = localStorage.getItem(densityStorageKey) || "comfortable"; 
 function setDensity(density, persist = false) {
   const normalized = density === "compact" ? "compact" : "comfortable";
   document.documentElement.dataset.density = normalized;
-  const label = t(normalized === "compact" ? "useComfortableLayout" : "useCompactLayout");
-  densityToggle.setAttribute("aria-label", label);
-  densityToggle.title = label;
-  densityToggle.textContent = normalized === "compact" ? "↕" : "↔";
   requestAnimationFrame(() => document.querySelectorAll(".grid").forEach(updatePanelGridColumns));
   if (persist) {
     cacheVisualPreference("density", normalized);
@@ -396,9 +433,6 @@ function setDensity(density, persist = false) {
   }
 }
 
-densityToggle.addEventListener("click", () => {
-  setDensity(document.documentElement.dataset.density === "compact" ? "comfortable" : "compact", true);
-});
 setDensity(storedDensity);
 
 sidebarToggle.addEventListener("click", () => {
@@ -487,12 +521,13 @@ function parseRoute() {
     return { module: "servers", group: serverGroupSlugs[0] };
   }
   if (route === "notifications" && appCapabilities.notifications) return { module: route };
+  if (route === "admin" && appCapabilities.administration) return { module: "admin" };
   if (route.startsWith("services/") && appCapabilities.services) return { module: "dashboard", environment: route.slice(9) };
   if (route.startsWith("dashboard/") && appCapabilities.services) return { module: "dashboard", environment: route.slice(10) };
   if (groupSlugs.includes(route) && appCapabilities.services) return { module: "dashboard", environment: route };
   if (appCapabilities.services) return { module: "dashboard", environment: groupSlugs[0] };
   const fallback = ["servers", "notifications"].find((name) => appCapabilities[name]);
-  return { module: fallback ?? "dashboard", environment: groupSlugs[0], group: serverGroupSlugs[0] };
+  return { module: fallback ?? (appCapabilities.administration ? "admin" : "dashboard"), environment: groupSlugs[0], group: serverGroupSlugs[0] };
 }
 
 function setActiveModule(module) {
@@ -501,15 +536,18 @@ function setActiveModule(module) {
     if (link.dataset.module === module) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
+  if (module === "admin") adminNavLink.setAttribute("aria-current", "page");
+  else adminNavLink.removeAttribute("aria-current");
   overviewView.hidden = module !== "overview";
   dashboardView.hidden = module !== "dashboard";
   monitoringView.hidden = module !== "servers";
   notificationsView.hidden = module !== "notifications";
+  adminView.hidden = module !== "admin";
   sessionView.hidden = true;
   viewTitleElement.textContent = {
-    overview: t("infrastructureScope"), dashboard: t("serviceOverview"), servers: t("serverOperations"), notifications: t("deliveryChannels")
+    overview: t("infrastructureScope"), dashboard: t("serviceOverview"), servers: t("serverOperations"), notifications: t("deliveryChannels"), admin: t("administration")
   }[module] ?? "Scope";
-  const subtitleKey = { overview: "overviewDescription", dashboard: "configurationLoading", servers: "serverSubtitle", notifications: "notificationsSubtitle" }[module];
+  const subtitleKey = { overview: "overviewDescription", dashboard: "configurationLoading", servers: "serverSubtitle", notifications: "notificationsSubtitle", admin: "administrationDescription" }[module];
   const menuName = module === "dashboard" ? "services" : module === "servers" ? "server" : module;
   const configuredSubtitle = module === "overview" ? "" : module === "dashboard" ? dashboardConfig?.subtitle : menuPresentation[menuName]?.subtitle;
   viewSubtitleElement.textContent = configuredSubtitle?.trim() || (subtitleKey ? t(subtitleKey) : "");
@@ -1338,11 +1376,7 @@ function createDashboardCard(item, group, panel, groupIndex, panelIndex, itemInd
     const hostname = document.createElement("span");
     hostname.className = "card-host";
     hostname.textContent = url.host;
-    const arrow = document.createElement("span");
-    arrow.className = "arrow";
-    arrow.textContent = "↗";
-    arrow.setAttribute("aria-hidden", "true");
-    footer.append(hostname, arrow);
+    footer.append(hostname);
   }
   const health = createEmbeddedHealth(
     { kind: "service", groupIndex, panelIndex, itemIndex },
@@ -1400,7 +1434,7 @@ function serverList() {
       monitoringConfigured: false,
       certificateMonitoring: connection.certificateMonitoring,
       dnsMonitoring: connection.dnsMonitoring,
-      status: remoteStatus?.status ?? "down"
+      status: remoteStatus?.status ?? "pending"
     };
   });
   return [...monitoringHosts, ...remoteOnlyHosts];
@@ -1481,7 +1515,8 @@ function applyStatuses(items) {
   for (const item of items) {
     const card = cardElements.get(`${item.groupIndex}:${item.panelIndex}:${item.itemIndex}`);
     if (!card) continue;
-    const label = statusLabels[item.status] || t("unknown");
+    const label = [statusLabels[item.status] || t("unknown"), item.detail, Number.isFinite(item.responseTimeMs) ? `${item.responseTimeMs} ms` : ""]
+      .filter(Boolean).join(" · ");
     card.dataset.status = item.status;
     card.querySelector(".card-state").title = label;
     card.querySelector(".card-state").setAttribute("aria-label", label);
@@ -1559,6 +1594,21 @@ function createStatsSection(title, className, ...metrics) {
   return section;
 }
 
+function createServerStatus(label, status, detail, className = "") {
+  const state = document.createElement("span");
+  state.className = `server-status${className ? ` ${className}` : ""}`;
+  state.dataset.status = status ?? "pending";
+  state.title = detail || t("remoteStatusChecking");
+  state.setAttribute("aria-label", `${label}: ${state.title}`);
+  const dot = document.createElement("i");
+  dot.className = "status-indicator";
+  dot.setAttribute("aria-hidden", "true");
+  const text = document.createElement("span");
+  text.textContent = label;
+  state.append(dot, text);
+  return state;
+}
+
 function createMonitoringCard(host, cardLayout) {
   const card = document.createElement("article");
   card.className = "monitoring-card";
@@ -1580,20 +1630,15 @@ function createMonitoringCard(host, cardLayout) {
     text.append(description);
   }
   if (host.tags?.length) text.append(createTagList(host.tags));
-  const state = document.createElement("span");
-  state.className = "card-state";
-  state.title = host.status === "up" ? "Up" : `Down: ${host.error ?? t("unreachable")}`;
-  state.setAttribute("aria-label", state.title);
-  const dot = document.createElement("i");
-  dot.className = "status-indicator";
-  dot.setAttribute("aria-hidden", "true");
-  state.append(dot);
   const meta = document.createElement("div");
   meta.className = "remote-card-meta";
-  const connectionType = document.createElement("span");
-  connectionType.className = "protocol-badge";
-  connectionType.textContent = host.connectionType.toUpperCase();
-  meta.append(createScopeBadge(host), connectionType, state, createFavoriteButton(serverFavoriteKey(host), host.favorite));
+  meta.append(createScopeBadge(host));
+  if (host.monitoringConfigured !== false) {
+    meta.append(
+      createServerStatus(`Docker/${host.connectionType.toUpperCase()}`, host.status, host.status === "up" ? "Up" : `Down: ${host.error ?? t("unreachable")}`, "server-monitoring-state")
+    );
+  }
+  meta.append(createFavoriteButton(serverFavoriteKey(host), host.favorite));
   header.append(text, meta);
   card.append(header);
   if (host.monitoringConfigured !== false && (host.status === "down" || !host.metrics)) {
@@ -1644,21 +1689,16 @@ function createMonitoringCard(host, cardLayout) {
         ? t("openProtocol", { protocol: connection.protocol.toUpperCase() })
         : t("remoteAccessRestricted");
       if (remoteAllowed) button.addEventListener("click", () => launchRemoteConnection(connection, button));
-      if (host.monitoringConfigured === false) {
-        actions.classList.add("server-actions-remote-only");
-        actions.append(button);
-      } else {
-        const remoteState = document.createElement("span");
-        remoteState.className = "server-remote-state";
-        remoteState.dataset.status = connectionStatus?.status ?? "down";
-        remoteState.title = connectionStatus?.detail ?? t("remoteStatusChecking");
-        const remoteDot = document.createElement("i");
-        remoteDot.className = "status-indicator";
-        const remoteLabel = document.createElement("span");
-        remoteLabel.textContent = connection.protocol.toUpperCase();
-        remoteState.append(remoteDot, remoteLabel);
-        actions.append(remoteState, button);
-      }
+      if (host.monitoringConfigured === false) actions.classList.add("server-actions-remote-only");
+      actions.append(
+        createServerStatus(
+          connection.protocol.toUpperCase(),
+          connectionStatus?.status,
+          connectionStatus?.detail,
+          "server-remote-state"
+        ),
+        button
+      );
       if (connectionStatus?.status === "down") {
         const diagnostic = document.createElement("small");
         diagnostic.className = "remote-diagnostic";
@@ -2648,6 +2688,594 @@ async function loadHistory() {
   }
 }
 
+function showDiagnostics(title, result) {
+  diagnosticsTitle.textContent = title;
+  diagnosticsSummary.textContent = result.status === "up" ? t("diagnosticsSuccessful") : t("diagnosticsFailed");
+  diagnosticsSummary.dataset.status = result.status;
+  diagnosticsSteps.replaceChildren(...result.steps.map((step) => {
+    const row = document.createElement("article");
+    row.className = "diagnostics-step";
+    row.dataset.status = step.status;
+    const mark = document.createElement("i");
+    const copy = document.createElement("span");
+    const heading = document.createElement("strong");
+    const detail = document.createElement("small");
+    const duration = document.createElement("time");
+    mark.textContent = step.status === "up" ? "✓" : "×";
+    heading.textContent = t(`diagnosticStep_${step.name.replaceAll("-", "_")}`);
+    detail.textContent = step.detail;
+    duration.textContent = `${step.durationMs} ms`;
+    copy.append(heading, detail);
+    row.append(mark, copy, duration);
+    return row;
+  }));
+  const failedStep = result.steps.find((step) => step.status === "down");
+  if (failedStep) {
+    const next = document.createElement("article");
+    next.className = "diagnostics-next";
+    const heading = document.createElement("strong");
+    const detail = document.createElement("p");
+    heading.textContent = t("recommendedNextStep");
+    detail.textContent = t(`diagnosticNext_${failedStep.name.replaceAll("-", "_")}`);
+    next.append(heading, detail);
+    diagnosticsSteps.append(next);
+  }
+  diagnosticsDialog.showModal();
+}
+
+async function runServiceDiagnostic(item, button) {
+  button.disabled = true;
+  button.textContent = t("diagnosing");
+  try {
+    const response = await fetch(`/api/diagnostics/service?id=${encodeURIComponent(item.id)}`, { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    showDiagnostics(item.name, result);
+  } catch (error) {
+    dashboardErrorElement.textContent = error.message;
+    dashboardErrorElement.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = t("troubleshoot");
+  }
+}
+
+async function runServerDiagnostic(serverId, button) {
+  button.disabled = true;
+  button.textContent = t("diagnosing");
+  try {
+    const response = await fetch(`/api/diagnostics/server?id=${encodeURIComponent(serverId)}`, { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    showDiagnostics(button.dataset.targetName || serverId, result);
+  } catch (error) {
+    monitoringErrorElement.textContent = error.message;
+    monitoringErrorElement.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = button.dataset.defaultLabel || t("checkConnection");
+  }
+}
+
+diagnosticsClose.addEventListener("click", () => diagnosticsDialog.close());
+diagnosticsDialog.addEventListener("click", (event) => { if (event.target === diagnosticsDialog) diagnosticsDialog.close(); });
+
+async function reviewProposal(proposal, state, destination, suggestion) {
+  serviceInboxError.hidden = true;
+  serviceInboxStatus.textContent = "";
+  const response = await fetch(`/api/admin/discovery-proposals/${encodeURIComponent(proposal.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      state,
+      targetGroup: destination?.groupId ?? "",
+      targetCategory: destination?.categoryId ?? "",
+      ...(destination?.newGroup ? { newGroup: destination.newGroup } : {}),
+      ...(destination?.newCategory ? { newCategory: destination.newCategory } : {}),
+      ...(suggestion ? { suggestion } : {})
+    })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+  await loadDiscoveryProposals({ forceRender: true });
+}
+
+function proposalField(labelKey, value, options = {}) {
+  const label = document.createElement("label");
+  const title = document.createElement("span");
+  const control = options.multiline ? document.createElement("textarea") : document.createElement("input");
+  title.textContent = t(labelKey);
+  control.value = value ?? "";
+  control.disabled = options.disabled === true;
+  if (options.maxLength) control.maxLength = options.maxLength;
+  if (options.placeholderKey) control.placeholder = t(options.placeholderKey);
+  if (!options.multiline) control.type = "text";
+  label.className = options.wide ? "proposal-field proposal-field-wide" : "proposal-field";
+  label.append(title, control);
+  return { label, control };
+}
+
+function generatedIdentifier(value) {
+  return String(value ?? "").toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
+}
+
+function bindGeneratedIdentifier(nameControl, idControl, persisted = false) {
+  let edited = persisted;
+  idControl.addEventListener("input", () => { edited = true; });
+  nameControl.addEventListener("input", () => {
+    if (!edited) idControl.value = generatedIdentifier(nameControl.value);
+  });
+}
+
+function selectField(labelKey, select) {
+  const label = document.createElement("label");
+  const title = document.createElement("span");
+  label.className = "proposal-field";
+  title.textContent = t(labelKey);
+  select.setAttribute("aria-label", title.textContent);
+  label.append(title, select);
+  return label;
+}
+
+function suggestedProposalDestination(proposal, destinations) {
+  const source = `${proposal.suggestion.id} ${proposal.suggestion.name} ${proposal.suggestion.url} ${proposal.suggestion.providerId}`.toLowerCase();
+  const categoryHints = {
+    monitoring: ["grafana", "prometheus", "loki", "uptime", "monitor"],
+    networking: ["traefik", "caddy", "nginx", "proxy", "dns", "router", "switch", "network"],
+    netzwerk: ["traefik", "caddy", "nginx", "proxy", "dns", "router", "switch", "network"],
+    management: ["authentik", "gitlab", "portainer", "proxmox", "admin", "management"],
+    storage: ["nextcloud", "minio", "nas", "backup", "storage"],
+    speicher: ["nextcloud", "minio", "nas", "backup", "storage"]
+  };
+  return destinations.map((destination, index) => {
+    const group = `${destination.groupId} ${destination.groupName}`.toLowerCase();
+    const category = `${destination.categoryId} ${destination.categoryName}`.toLowerCase();
+    let score = 0;
+    for (const token of group.split(/[^a-z0-9]+/).filter((item) => item.length >= 3)) {
+      if (source.includes(token)) score += 4;
+    }
+    for (const [hint, keywords] of Object.entries(categoryHints)) {
+      if (category.includes(hint) && keywords.some((keyword) => source.includes(keyword))) score += 3;
+    }
+    return { destination, index, score };
+  }).sort((left, right) => right.score - left.score || left.index - right.index)[0]?.destination;
+}
+
+function renderDiscoveryProviders(data) {
+  const providers = data.providers ?? [];
+  serviceInboxProviders.hidden = providers.length === 0;
+  serviceInboxProviders.replaceChildren(...providers.map((provider) => {
+    const card = document.createElement("article");
+    const indicator = document.createElement("i");
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    const meta = document.createElement("small");
+    const detail = document.createElement("small");
+    const checkedAt = new Date(provider.checkedAt ?? data.checkedAt);
+    const time = Number.isNaN(checkedAt.getTime()) ? t("unknown") : checkedAt.toLocaleTimeString(locale);
+    const resourceKey = provider.type === "docker" ? "providerTargets" : "providerRoutes";
+    card.className = "service-inbox-provider";
+    card.dataset.status = provider.status;
+    card.title = provider.error || "";
+    indicator.setAttribute("aria-hidden", "true");
+    name.textContent = provider.name;
+    meta.textContent = `${t(provider.status === "up" ? "providerUp" : "providerDown")} · ${t(resourceKey, {
+      count: provider.type === "docker" ? provider.targets : provider.routes
+    })} · ${t("providerCheckedAt", { time })}`;
+    detail.textContent = provider.error || (provider.driver ?? provider.type);
+    copy.append(name, meta, detail);
+    card.append(indicator, copy);
+    return card;
+  }));
+}
+
+function selectServiceInboxView(name) {
+  const views = { services: serviceInboxServicesView, providers: serviceInboxProvidersView };
+  const selected = views[name] ? name : "services";
+  Object.entries(views).forEach(([key, view]) => { view.hidden = key !== selected; });
+  serviceInboxTabs.querySelectorAll("button[data-service-inbox-view]").forEach((button) => {
+    const active = button.dataset.serviceInboxView === selected;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+}
+
+serviceInboxTabs.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-service-inbox-view]");
+  if (button) selectServiceInboxView(button.dataset.serviceInboxView);
+});
+
+serviceInboxTabs.addEventListener("keydown", (event) => {
+  if (!new Set(["ArrowLeft", "ArrowRight"]).has(event.key)) return;
+  const tabs = [...serviceInboxTabs.querySelectorAll("button[data-service-inbox-view]")];
+  const current = tabs.indexOf(document.activeElement);
+  if (current < 0) return;
+  event.preventDefault();
+  const direction = event.key === "ArrowRight" ? 1 : -1;
+  const next = tabs[(current + direction + tabs.length) % tabs.length];
+  selectServiceInboxView(next.dataset.serviceInboxView);
+  next.focus();
+});
+
+function hasActiveProposalEditor() {
+  return Boolean(proposalListElement.querySelector(".proposal-editor:not([hidden])"));
+}
+
+function renderDiscoveryProposals(data, { force = false } = {}) {
+  latestDiscoveryProposals = data;
+  renderDiscoveryProviders(data);
+  if (!force && hasActiveProposalEditor()) return;
+  const counts = { pending: 0, accepted: 0, rejected: 0, all: data.proposals.length };
+  data.proposals.forEach((proposal) => {
+    const state = proposal.state === "ignored" ? "rejected" : proposal.state;
+    counts[state] = (counts[state] ?? 0) + 1;
+  });
+  serviceInboxCount.textContent = String(counts.pending);
+  serviceInboxCount.hidden = counts.pending === 0;
+  proposalFiltersElement.querySelectorAll("button[data-proposal-filter]").forEach((button) => {
+    const active = button.dataset.proposalFilter === proposalFilter;
+    button.setAttribute("aria-pressed", String(active));
+    button.querySelector("output").textContent = String(counts[button.dataset.proposalFilter] ?? 0);
+  });
+  const query = proposalSearch.trim().toLowerCase();
+  const proposals = data.proposals.filter((proposal) => {
+    const state = proposal.state === "ignored" ? "rejected" : proposal.state;
+    if (proposalFilter !== "all" && state !== proposalFilter) return false;
+    if (!query) return true;
+    return [proposal.suggestion.id, proposal.suggestion.name, proposal.suggestion.url, proposal.suggestion.providerId]
+      .some((value) => String(value ?? "").toLowerCase().includes(query));
+  });
+  const proposalCards = proposals.map((proposal) => {
+    const proposalState = proposal.state === "ignored" ? "rejected" : proposal.state;
+    const card = document.createElement("article");
+    card.className = "proposal-card";
+    card.dataset.state = proposalState;
+    const heading = document.createElement("header");
+    const copy = document.createElement("span");
+    const serviceTitle = document.createElement("strong");
+    const url = document.createElement("small");
+    const source = document.createElement("small");
+    const state = document.createElement("em");
+    serviceTitle.textContent = proposal.suggestion.name;
+    url.textContent = proposal.suggestion.url;
+    source.textContent = t("discoveredVia", { provider: proposal.suggestion.providerId ?? "Discovery" });
+    state.textContent = t(`proposal_${proposalState}`);
+    copy.append(serviceTitle, url, source);
+    heading.append(copy, state);
+
+    const name = proposalField("serviceName", proposal.suggestion.name, { maxLength: 120 });
+    const id = proposalField("serviceId", proposal.suggestion.id, { maxLength: 64 });
+    const description = proposalField("serviceDescription", proposal.suggestion.description, {
+      maxLength: 240, wide: true, placeholderKey: "optionalDescription"
+    });
+    const icon = proposalField("serviceIcon", proposal.suggestion.icon, {
+      maxLength: 240, wide: true, placeholderKey: "optionalIcon"
+    });
+    const fields = document.createElement("div");
+    fields.className = "proposal-fields";
+    fields.append(name.label, id.label, description.label, icon.label);
+
+    const dependencyField = document.createElement("fieldset");
+    const dependencyLegend = document.createElement("legend");
+    const dependencyOptions = document.createElement("div");
+    const provider = (data.providers ?? []).find((item) => item.id === proposal.suggestion.providerId);
+    const initialDependencies = Object.hasOwn(proposal.suggestion, "depends-on") && Array.isArray(proposal.suggestion["depends-on"])
+      ? proposal.suggestion["depends-on"]
+      : (provider?.dependsOn ?? []);
+    dependencyField.className = "proposal-dependencies";
+    dependencyLegend.textContent = t("dependsOn");
+    dependencyOptions.className = "proposal-dependency-options";
+    for (const server of data.servers ?? []) {
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      const text = document.createElement("span");
+      checkbox.type = "checkbox";
+      checkbox.value = server.id;
+      checkbox.checked = initialDependencies.includes(server.id);
+      text.textContent = server.name;
+      label.title = server.id;
+      label.append(checkbox, text);
+      dependencyOptions.append(label);
+    }
+    dependencyField.append(dependencyLegend, dependencyOptions);
+
+    const targetEditor = document.createElement("div");
+    const targetMode = document.createElement("select");
+    const destination = document.createElement("select");
+    targetEditor.className = "proposal-target-editor";
+    for (const [value, key] of [["existing", "targetExistingPanel"], ["new-panel", "targetNewPanel"], ["new-area", "targetNewArea"]]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = t(key);
+      targetMode.append(option);
+    }
+    targetMode.value = proposal.suggestion.newGroup
+      ? "new-area"
+      : proposal.suggestion.newCategory
+        ? "new-panel"
+        : data.destinations.length
+          ? "existing"
+          : (data.groups?.length ? "new-panel" : "new-area");
+    const suggestedDestination = suggestedProposalDestination(proposal, data.destinations);
+    for (const item of data.destinations) {
+      const option = document.createElement("option");
+      option.value = `${item.groupId}:${item.categoryId}`;
+      option.textContent = `${item.groupName} / ${item.categoryName}${item.isDraft ? ` · ${t("acceptedDraft")}` : ""}`;
+      option.dataset.groupId = item.groupId;
+      option.dataset.categoryId = item.categoryId;
+      if (item.newGroup) {
+        option.dataset.newGroupId = item.newGroup.id;
+        option.dataset.newGroupName = item.newGroup.name;
+      }
+      if (item.newCategory) {
+        option.dataset.newCategoryId = item.newCategory.id;
+        option.dataset.newCategoryName = item.newCategory.name;
+      }
+      option.selected = proposal.targetGroup
+        ? item.groupId === proposal.targetGroup && item.categoryId === proposal.targetCategory
+        : item === suggestedDestination;
+      destination.append(option);
+    }
+    const newCategoryFields = document.createElement("div");
+    const targetGroup = document.createElement("select");
+    const categoryName = proposalField("newCategoryName", proposal.suggestion.newCategory?.name, { maxLength: 120 });
+    const categoryId = proposalField("newCategoryId", proposal.suggestion.newCategory?.id, { maxLength: 64 });
+    newCategoryFields.className = "proposal-new-category";
+    for (const group of data.groups ?? []) {
+      const option = document.createElement("option");
+      option.value = group.groupId;
+      option.textContent = `${group.groupName}${group.isDraft ? ` · ${t("acceptedDraft")}` : ""}`;
+      option.dataset.groupId = group.groupId;
+      option.dataset.groupName = group.groupName;
+      option.dataset.draft = String(group.isDraft === true);
+      option.selected = group.groupId === (proposal.targetGroup || proposal.suggestion.newCategory?.groupId)
+        || (!proposal.targetGroup && !proposal.suggestion.newCategory?.groupId && group.groupId === suggestedDestination?.groupId);
+      targetGroup.append(option);
+    }
+    bindGeneratedIdentifier(categoryName.control, categoryId.control, Boolean(proposal.suggestion.newCategory?.id));
+    newCategoryFields.append(selectField("targetGroup", targetGroup), categoryName.label, categoryId.label);
+
+    const newAreaFields = document.createElement("div");
+    const areaName = proposalField("newAreaName", proposal.suggestion.newGroup?.name, { maxLength: 120 });
+    const areaId = proposalField("newAreaId", proposal.suggestion.newGroup?.id, { maxLength: 64 });
+    const areaCategoryName = proposalField("newCategoryName", proposal.suggestion.newCategory?.name, { maxLength: 120 });
+    const areaCategoryId = proposalField("newCategoryId", proposal.suggestion.newCategory?.id, { maxLength: 64 });
+    newAreaFields.className = "proposal-new-area";
+    bindGeneratedIdentifier(areaName.control, areaId.control, Boolean(proposal.suggestion.newGroup?.id));
+    bindGeneratedIdentifier(areaCategoryName.control, areaCategoryId.control, Boolean(proposal.suggestion.newCategory?.id));
+    newAreaFields.append(areaName.label, areaId.label, areaCategoryName.label, areaCategoryId.label);
+
+    const existingFields = document.createElement("div");
+    existingFields.className = "proposal-existing-target";
+    existingFields.append(selectField("targetCategory", destination));
+    targetEditor.append(selectField("targetMode", targetMode), existingFields, newCategoryFields, newAreaFields);
+    const syncTargetMode = () => {
+      existingFields.hidden = targetMode.value !== "existing";
+      newCategoryFields.hidden = targetMode.value !== "new-panel";
+      newAreaFields.hidden = targetMode.value !== "new-area";
+    };
+    targetMode.addEventListener("change", syncTargetMode);
+    syncTargetMode();
+
+    const actions = document.createElement("div");
+    actions.className = "proposal-actions";
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.dataset.action = "cancel";
+    cancelButton.textContent = t("cancelAddService");
+    cancelButton.hidden = true;
+    for (const [nextState, key] of [["accepted", "acceptSuggestion"], ["rejected", "rejectSuggestion"]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.action = nextState;
+      const restingLabel = nextState === "accepted" && proposalState === "accepted" ? "editSuggestion" : key;
+      button.textContent = t(restingLabel);
+      button.hidden = nextState === "rejected" && proposalState === "rejected";
+      button.addEventListener("click", async () => {
+        if (nextState === "accepted" && editor.hidden) {
+          editor.hidden = false;
+          cancelButton.hidden = false;
+          button.textContent = t(proposalState === "accepted" ? "confirmSuggestionChanges" : "confirmAddService");
+          return;
+        }
+        button.disabled = true;
+        try {
+          const selected = destination.selectedOptions[0]?.dataset;
+          const selectedGroup = targetGroup.selectedOptions[0]?.dataset;
+          const selectedDestination = targetMode.value === "new-area" ? {
+            groupId: areaId.control.value,
+            categoryId: areaCategoryId.control.value,
+            newGroup: { id: areaId.control.value, name: areaName.control.value },
+            newCategory: { id: areaCategoryId.control.value, name: areaCategoryName.control.value }
+          } : targetMode.value === "new-panel" ? {
+            groupId: targetGroup.value,
+            categoryId: categoryId.control.value,
+            ...(selectedGroup?.draft === "true" ? {
+              newGroup: { id: targetGroup.value, name: selectedGroup.groupName }
+            } : {}),
+            newCategory: { id: categoryId.control.value, name: categoryName.control.value }
+          } : selected ? {
+            groupId: selected.groupId,
+            categoryId: selected.categoryId,
+            ...(selected.newGroupId ? { newGroup: { id: selected.newGroupId, name: selected.newGroupName } } : {}),
+            ...(selected.newCategoryId ? { newCategory: { id: selected.newCategoryId, name: selected.newCategoryName } } : {})
+          } : null;
+          const customized = nextState === "accepted" ? {
+            id: id.control.value,
+            name: name.control.value,
+            description: description.control.value,
+            icon: icon.control.value,
+            "depends-on": [...dependencyOptions.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value)
+          } : undefined;
+          await reviewProposal(
+            proposal,
+            nextState,
+            selectedDestination,
+            customized
+          );
+        } catch (error) {
+          serviceInboxError.textContent = error.message;
+          serviceInboxError.hidden = false;
+          button.disabled = false;
+        }
+      });
+      actions.append(button);
+    }
+    cancelButton.addEventListener("click", () => {
+      editor.hidden = true;
+      cancelButton.hidden = true;
+      actions.querySelector('[data-action="accepted"]')?.replaceChildren(t(proposalState === "accepted" ? "editSuggestion" : "acceptSuggestion"));
+    });
+    actions.prepend(cancelButton);
+    const footer = document.createElement("footer");
+    const destinationFields = document.createElement("div");
+    destinationFields.className = "proposal-destination";
+    destinationFields.append(targetEditor);
+    const editor = document.createElement("div");
+    editor.className = "proposal-editor";
+    editor.hidden = true;
+    editor.append(fields, dependencyField, destinationFields);
+    footer.append(actions);
+    card.append(heading, editor, footer);
+    return { providerId: proposal.suggestion.providerId ?? "unassigned", card };
+  });
+  const providerNames = new Map((data.providers ?? []).map((provider) => [provider.id, provider.name]));
+  const cardsByProvider = new Map();
+  for (const item of proposalCards) {
+    if (!cardsByProvider.has(item.providerId)) cardsByProvider.set(item.providerId, []);
+    cardsByProvider.get(item.providerId).push(item.card);
+  }
+  proposalListElement.replaceChildren(...[...cardsByProvider.entries()].map(([providerId, cards]) => {
+    const group = document.createElement("details");
+    const summary = document.createElement("summary");
+    const label = document.createElement("span");
+    const count = document.createElement("output");
+    const grid = document.createElement("div");
+    group.className = "proposal-provider-group";
+    group.open = true;
+    label.textContent = providerNames.get(providerId) ?? providerId;
+    count.textContent = String(cards.length);
+    grid.className = "proposal-provider-grid";
+    grid.append(...cards);
+    summary.append(label, count);
+    group.append(summary, grid);
+    return group;
+  }));
+  if (!proposals.length) {
+    const empty = document.createElement("p");
+    empty.className = "proposal-empty";
+    empty.textContent = data.proposals.length ? t("noMatchingProposals") : t("noDiscoveryProposals");
+    proposalListElement.append(empty);
+  }
+}
+
+proposalFiltersElement.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-proposal-filter]");
+  if (!button) return;
+  proposalFilter = button.dataset.proposalFilter;
+  renderDiscoveryProposals(latestDiscoveryProposals);
+});
+
+proposalSearchElement.addEventListener("input", () => {
+  proposalSearch = proposalSearchElement.value;
+  renderDiscoveryProposals(latestDiscoveryProposals);
+});
+
+async function loadDiscoveryProposals({ forceRender = false } = {}) {
+  if (!appCapabilities.inventory) return;
+  const response = await fetch("/api/admin/discovery-proposals", { cache: "no-store" });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+  renderDiscoveryProposals(result, { force: forceRender });
+}
+
+function selectAdminTab(name) {
+  const panes = { users: adminUsersPane, audit: adminAuditPane };
+  const selected = panes[name] ? name : "users";
+  Object.entries(panes).forEach(([key, pane]) => { pane.hidden = key !== selected; });
+  adminTabs.querySelectorAll("button").forEach((button) => {
+    if (button.dataset.adminTab === selected) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  if (selected === "users") loadUsers().catch(() => { adminStatus.textContent = t("usersLoadFailed"); });
+  if (selected === "audit") loadAuditEvents().catch(() => { adminStatus.textContent = t("auditLoadFailed"); });
+}
+
+adminTabs.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-admin-tab]");
+  if (button) selectAdminTab(button.dataset.adminTab);
+});
+
+async function refreshServiceInbox() {
+  serviceInboxRefresh.disabled = true;
+  serviceInboxError.hidden = true;
+  try {
+    const response = await fetch("/api/inventory/refresh", { method: "POST", cache: "no-store" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    await loadDiscoveryProposals();
+  } catch (error) {
+    serviceInboxError.textContent = error.message;
+    serviceInboxError.hidden = false;
+  } finally {
+    serviceInboxRefresh.disabled = false;
+  }
+}
+
+async function copyMergedInventory() {
+  serviceInboxCopy.disabled = true;
+  serviceInboxStatus.textContent = "";
+  try {
+    const response = await fetch("/api/admin/discovery-export?format=full", { cache: "no-store" });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || `HTTP ${response.status}`);
+    }
+    const source = await response.text();
+    try {
+      await navigator.clipboard.writeText(source);
+    } catch {
+      const fallback = document.createElement("textarea");
+      fallback.value = source;
+      fallback.setAttribute("readonly", "");
+      fallback.style.position = "fixed";
+      fallback.style.opacity = "0";
+      document.body.append(fallback);
+      fallback.select();
+      const copied = document.execCommand("copy");
+      fallback.remove();
+      if (!copied) throw new Error(t("clipboardUnavailable"));
+    }
+    serviceInboxStatus.textContent = t("inventoryCopied");
+  } catch (error) {
+    serviceInboxStatus.textContent = t("inventoryCopyFailed", { error: error.message });
+  } finally {
+    serviceInboxCopy.disabled = false;
+  }
+}
+
+serviceInboxButton.addEventListener("click", async () => {
+  proposalFilter = "pending";
+  proposalSearch = "";
+  proposalSearchElement.value = "";
+  selectServiceInboxView("services");
+  serviceInboxError.hidden = true;
+  serviceInboxStatus.textContent = "";
+  serviceInboxDialog.showModal();
+  try { await loadDiscoveryProposals(); }
+  catch (error) {
+    serviceInboxError.textContent = error.message;
+    serviceInboxError.hidden = false;
+  }
+});
+serviceInboxClose.addEventListener("click", () => serviceInboxDialog.close());
+serviceInboxDialog.addEventListener("cancel", (event) => {
+  if (hasActiveProposalEditor()) event.preventDefault();
+});
+serviceInboxRefresh.addEventListener("click", refreshServiceInbox);
+serviceInboxCopy.addEventListener("click", copyMergedInventory);
+
 function syncSettingsControls() {
   settingsTheme.value = document.documentElement.dataset.theme || "dark";
   settingsLanguage.value = locale;
@@ -2677,13 +3305,23 @@ async function loadPersonalPreferences() {
       sidebar: document.documentElement.dataset.sidebar
     })) cacheVisualPreference(key, value);
     settingsButton.hidden = false;
+    profileSettingsButton.hidden = false;
     settingsUserElement.textContent = account.displayName || account.username;
+    profileAvatar.textContent = (account.displayName || account.username).trim().slice(0, 1).toUpperCase();
     settingsDisplayName.textContent = account.displayName || account.username;
     settingsAccountName.textContent = `@${account.username}`;
     settingsAvatar.textContent = (account.displayName || account.username).trim().slice(0, 1).toUpperCase();
     settingsRole.textContent = account.role;
-    settingsUserManagement.hidden = account.role !== "admin";
-    settingsAudit.hidden = account.role !== "admin";
+    const isAdmin = account.role === "admin";
+    appCapabilities.administration = isAdmin;
+    settingsUserManagement.hidden = !isAdmin;
+    settingsAudit.hidden = !isAdmin;
+    adminTabs.querySelectorAll('[data-admin-tab="users"], [data-admin-tab="audit"]').forEach((button) => { button.hidden = !isAdmin; });
+    if (appCapabilities.inventory && account.role !== "admin") appCapabilities.inventory = false;
+    serviceInboxButton.hidden = !(isAdmin && appCapabilities.inventory);
+    if (isAdmin) selectAdminTab("users");
+    adminNavLink.hidden = !isAdmin;
+    if (isAdmin && appCapabilities.inventory) loadDiscoveryProposals().catch(() => {});
     syncSettingsControls();
   } catch { /* Scope remains usable if preferences are temporarily unavailable. */ }
 }
@@ -2713,10 +3351,10 @@ async function loadUsers() {
           const update = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}/active`, {
             method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !user.active })
           });
-          if (!update.ok) settingsStatus.textContent = t("userUpdateFailed");
+          if (!update.ok) adminStatus.textContent = t("userUpdateFailed");
           else await loadUsers();
         } catch {
-          settingsStatus.textContent = t("userUpdateFailed");
+          adminStatus.textContent = t("userUpdateFailed");
         } finally {
           toggle.disabled = false;
         }
@@ -2744,7 +3382,7 @@ async function loadAuditEvents() {
       : event.targetId;
     const targetKey = {
       user: "auditTargetUser", channel: "auditTargetChannel", connection: "auditTargetConnection",
-      session: "auditTargetSession", maintenance: "auditTargetMaintenance"
+      session: "auditTargetSession", maintenance: "auditTargetMaintenance", "discovery-proposal": "auditTargetDiscoveryProposal"
     }[event.targetType] || "auditTargetScope";
     detail.textContent = t("auditActorAndTarget", {
       actor: event.actor || t("auditSystemActor"),
@@ -2758,12 +3396,29 @@ async function loadAuditEvents() {
   }));
 }
 
-settingsButton.addEventListener("click", () => {
+function closeProfileMenu() {
+  profileMenu.hidden = true;
+  settingsButton.setAttribute("aria-expanded", "false");
+}
+
+settingsButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const opening = profileMenu.hidden;
+  profileMenu.hidden = !opening;
+  settingsButton.setAttribute("aria-expanded", String(opening));
+});
+profileSettingsButton.addEventListener("click", () => {
+  closeProfileMenu();
   clearResetConfirmations([settingsResetLayouts, settingsResetFavorites]);
   syncSettingsControls();
   settingsStatus.textContent = "";
   settingsDialog.showModal();
-  Promise.all([loadUsers(), loadAuditEvents()]).catch(() => { settingsStatus.textContent = t("usersLoadFailed"); });
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#profile-control")) closeProfileMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !profileMenu.hidden) closeProfileMenu();
 });
 settingsDialog.addEventListener("click", (event) => {
   if (event.target === settingsDialog) settingsDialog.close();
@@ -2818,16 +3473,16 @@ settingsCreateUser.addEventListener("click", async () => {
       })
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) settingsStatus.textContent = result.error || t("userCreateFailed");
+    if (!response.ok) adminStatus.textContent = result.error || t("userCreateFailed");
     else {
       settingsNewUsername.value = "";
       settingsNewDisplayName.value = "";
       settingsNewUserPassword.value = "";
-      settingsStatus.textContent = t("userCreated");
+      adminStatus.textContent = t("userCreated");
       await loadUsers();
     }
   } catch {
-    settingsStatus.textContent = t("userCreateFailed");
+    adminStatus.textContent = t("userCreateFailed");
   } finally {
     settingsCreateUser.disabled = false;
   }
@@ -2848,6 +3503,7 @@ async function loadMeta() {
       brandSubtitleElement.textContent = meta.subtitle || "";
       footerTitleElement.textContent = appTitle;
       document.title = appTitle;
+      settingsUserElement.textContent = meta.authenticationRequired ? t("account") : appTitle;
       iconBaseUrl = meta.iconBaseUrl || defaultIconBaseUrl;
       menuPresentation = meta.menu || {};
       serverGroups = menuPresentation.server?.groups ?? [];
@@ -2859,6 +3515,10 @@ async function loadMeta() {
       dashboardNavLink.hidden = !appCapabilities.services;
       serversNavLink.hidden = !appCapabilities.servers;
       notificationsNavLink.hidden = !appCapabilities.notifications;
+      serviceInboxButton.hidden = meta.authenticationRequired || !appCapabilities.inventory;
+      adminNavLink.hidden = true;
+      settingsButton.hidden = !meta.authenticationRequired;
+      if (!meta.authenticationRequired && appCapabilities.inventory) loadDiscoveryProposals().catch(() => {});
       rerenderLocalizedContent();
       renderOverview();
     }
@@ -2872,6 +3532,7 @@ function renderRoute() {
   if (route.module === "overview") renderOverview();
   if (route.module === "dashboard") renderSelectedEnvironment(route.environment);
   if (route.module === "servers") renderMonitoring(route.group);
+  if (route.module === "admin") selectAdminTab("users");
 }
 
 window.addEventListener("hashchange", renderRoute);

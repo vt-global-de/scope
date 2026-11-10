@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Release 1.0.0" src="https://img.shields.io/badge/release-1.0.0-40c4cf?style=flat-square">
+  <img alt="Release 1.1.0" src="https://img.shields.io/badge/release-1.1.0-40c4cf?style=flat-square">
   <img alt="AGPL-3.0-or-later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-7658b5?style=flat-square">
   <img alt="YAML inventory" src="https://img.shields.io/badge/inventory-YAML-cb8f2e?style=flat-square">
   <img alt="Docker amd64 and arm64" src="https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ed?style=flat-square">
@@ -47,12 +47,13 @@ flowchart LR
     class services,servers,remote,history,alerts capability;
 ```
 
-## What ships with Scope 1.0
+## What ships with Scope 1.1
 
 | | Capability | What it provides |
 | --- | --- | --- |
 | ◉ | **Scope board** | A focused health summary across configured services and servers. |
 | ↗ | **Services** | Dynamic links, groups, tags, favorites, dependencies, DNS and TLS status. |
+| ◇ | **Service discovery** | Provider-neutral route discovery, controlled review and merged YAML export. |
 | ◫ | **Server operations** | Docker CPU, memory, storage, container, volume, network and image metrics. |
 | `>_` | **Remote sessions** | Browser-based SSH and RDP with roles, diagnostics and audit events. |
 | ◷ | **Status history** | PostgreSQL-backed transitions, availability and recent outages. |
@@ -78,7 +79,7 @@ docker compose ps
 docker compose logs -f scope
 ```
 
-The example stack uses the immutable `ghcr.io/vt-global-de/scope:1.0.0` image. Build the image locally only when developing Scope itself:
+The example stack uses the immutable `ghcr.io/vt-global-de/scope:1.1.0` image. Build the image locally only when developing Scope itself:
 
 ```sh
 docker build -t scope:local .
@@ -161,30 +162,30 @@ The application container owns the WebUI, API, checks and remote-session lifecyc
 
 ## Roadmap
 
-Scope 1.0 is the operational foundation. The next releases evolve it from a configured overview into a live infrastructure context and incident workspace while keeping YAML authoritative.
+Scope has two deliberate product generations: **1.x helps operators see and reach their infrastructure; 2.x will help them understand failures and respond with context.** YAML remains authoritative across both.
 
 ```mermaid
 flowchart LR
-    v10["1.0<br/>Operational foundation<br/>SHIPPED"] --> v11["1.1<br/>Discovery & drift<br/>NEXT"]
-    v11 --> v12["1.2<br/>Dependency intelligence<br/>PLANNED"]
-    v12 --> v13["1.3<br/>Incident workspace<br/>PLANNED"]
-    v13 --> v14["1.4<br/>Scope Agent<br/>EXPLORING"]
+    v10["1.0<br/>Operational foundation<br/>SHIPPED"] --> v11["1.1<br/>Discovery<br/>SHIPPED"]
+    v11 --> v12["1.2<br/>Secure reach<br/>NEXT"]
+    v12 --> v13["1.3<br/>Operational integrations<br/>PLANNED"]
+    v13 --> v20["2.0<br/>Infrastructure intelligence<br/>DIRECTION"]
 
     classDef shipped fill:#123c33,stroke:#10a474,color:#e7eff1,stroke-width:2px;
     classDef next fill:#10343a,stroke:#40c4cf,color:#e7eff1,stroke-width:2px;
     classDef planned fill:#25222f,stroke:#7658b5,color:#e7eff1;
-    class v10 shipped;
-    class v11 next;
-    class v12,v13,v14 planned;
+    class v10,v11 shipped;
+    class v12 next;
+    class v13,v20 planned;
 ```
 
 | Release | Direction | Selected outcomes |
 | --- | --- | --- |
 | **1.0 · Shipped** | Operational foundation | Inventory v1, monitoring, remote sessions, history, notifications and metrics. |
-| **1.1 · Next** | Discovery and drift | Docker/Traefik discovery, drift reports and reviewable inventory suggestions. |
-| **1.2 · Planned** | Dependency intelligence | Dependency graph, root-cause grouping and blast-radius views. |
-| **1.3 · Planned** | Incident workspace | Unified timelines, runbooks, diagnostics and contextual tool links. |
-| **1.4 · Exploring** | Scope Agent | Outbound-only collection across network zones with least-privilege enrollment. |
+| **1.1 · Shipped** | Discovery | Provider-neutral discovery, a config-driven Service Inbox and guided connection troubleshooting. |
+| **1.2 · Next** | Secure reach | Outbound-only Scope Agent, multi-zone checks and least-privilege enrollment. |
+| **1.3 · Planned** | Operational integrations | External identity, advanced alert routing, webhooks, Grafana assets and operational hardening. |
+| **2.0 · Direction** | Infrastructure intelligence | Topology, incident correlation, blast radius, runbooks and evidence-backed troubleshooting paths. |
 
 The roadmap communicates direction, not release dates. Read the [full roadmap and product guardrails](ROADMAP.md).
 

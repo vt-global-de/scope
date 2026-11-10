@@ -43,7 +43,7 @@ test("derives all runtime views from one inventory", () => {
   assert.equal(toServersConfig(inventory).servers[0].categoryId, "infrastructure");
   assert.deepEqual(toServersConfig(inventory).servers[0].categoryLayout, { width: "large" });
   assert.deepEqual(inventoryCapabilities(inventory), {
-    services: true, servers: true, certificates: true, dns: true, notifications: true,
+    services: true, servers: true, certificates: true, dns: true, notifications: true, inventory: false,
     monitoring: true, remote: true
   });
 });
@@ -242,6 +242,38 @@ test("validates the top-level authentication flag", () => {
   const invalid = structuredClone(inventory);
   invalid.authenticate = "true";
   assert.throws(() => validateInventoryConfig(invalid), /authenticate muss true oder false/);
+});
+
+test("validates provider-neutral discovery configuration", () => {
+  const configured = structuredClone(inventory);
+  configured.discovery = { providers: [
+    { id: "docker", type: "docker", server: "docker-01" },
+    { id: "routes", type: "reverse-proxy", driver: "caddy", url: "http://caddy:2019", authoritative: false, "depends-on": ["docker-01"] }
+  ] };
+  assert.equal(validateInventoryConfig(configured), configured);
+  assert.equal(inventoryCapabilities(configured).inventory, true);
+
+  const disabled = structuredClone(configured);
+  disabled.discovery.providers.forEach((provider) => { provider.enabled = false; });
+  assert.equal(inventoryCapabilities(disabled).inventory, false);
+
+  const invalid = structuredClone(configured);
+  invalid.discovery.providers[1].driver = "only-one-proxy";
+  assert.throws(() => validateInventoryConfig(invalid), /traefik, caddy oder nginx-proxy-manager/);
+
+  const unknownDependency = structuredClone(configured);
+  unknownDependency.discovery.providers[1]["depends-on"] = ["missing-host"];
+  assert.throws(() => validateInventoryConfig(unknownDependency), /depends-on verweist auf unbekannten Server missing-host/);
+});
+
+test("validates advanced service health checks", () => {
+  const configured = structuredClone(inventory);
+  configured.menu.services.groups[0].categories[0].services[0].health = {
+    path: "/readyz", method: "GET", "expected-status": [200, 204], "follow-redirects": true, "timeout-ms": 2500
+  };
+  assert.equal(validateInventoryConfig(configured), configured);
+  configured.menu.services.groups[0].categories[0].services[0].health["expected-status"] = [200, 200];
+  assert.throws(() => validateInventoryConfig(configured), /doppelte Werte/);
 });
 
 test("rejects misspelled inventory fields instead of silently ignoring them", () => {

@@ -23,7 +23,7 @@ export function classifyHttpStatus(httpStatus) {
   return "down";
 }
 
-function nativeRequest(url, method, timeoutMs, rejectUnauthorized) {
+function nativeRequest(url, method, timeoutMs, rejectUnauthorized, followRedirects, remainingRedirects = 5) {
   return new Promise((resolve, reject) => {
     const requestImpl = url.protocol === "https:" ? httpsRequest : httpRequest;
     const request = requestImpl(url, {
@@ -31,6 +31,12 @@ function nativeRequest(url, method, timeoutMs, rejectUnauthorized) {
       headers: { "User-Agent": "Scope/1.0 status-check" },
       ...(url.protocol === "https:" ? { rejectUnauthorized } : {})
     }, (response) => {
+      if (followRedirects && remainingRedirects > 0 && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        response.resume();
+        const redirected = new URL(response.headers.location, url);
+        nativeRequest(redirected, method, timeoutMs, rejectUnauthorized, true, remainingRedirects - 1).then(resolve, reject);
+        return;
+      }
       response.resume();
       resolve({ status: response.statusCode ?? 0 });
     });
@@ -44,8 +50,8 @@ function nativeRequest(url, method, timeoutMs, rejectUnauthorized) {
   });
 }
 
-async function request(url, method, fetchImpl, timeoutMs, rejectUnauthorized) {
-  if (!fetchImpl) return nativeRequest(url, method, timeoutMs, rejectUnauthorized);
+async function request(url, method, fetchImpl, timeoutMs, rejectUnauthorized, followRedirects) {
+  if (!fetchImpl) return nativeRequest(url, method, timeoutMs, rejectUnauthorized, followRedirects);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -53,7 +59,7 @@ async function request(url, method, fetchImpl, timeoutMs, rejectUnauthorized) {
   try {
     const response = await fetchImpl(url, {
       method,
-      redirect: "manual",
+      redirect: followRedirects ? "follow" : "manual",
       signal: controller.signal,
       headers: { "User-Agent": "Scope/1.0 status-check" }
     });
@@ -64,21 +70,28 @@ async function request(url, method, fetchImpl, timeoutMs, rejectUnauthorized) {
   }
 }
 
-export async function checkUrl(value, { fetchImpl, timeoutMs = 4000, rejectUnauthorized = true } = {}) {
+export async function checkUrl(value, {
+  fetchImpl, timeoutMs = 4000, rejectUnauthorized = true, method, expectedStatuses, followRedirects = false
+} = {}) {
   const url = parseHttpUrl(value);
   if (!url) {
     return { status: "down", detail: "URL fehlt oder ist ungültig" };
   }
 
   try {
-    let response = await request(url, "HEAD", fetchImpl, timeoutMs, rejectUnauthorized);
-    if (classifyHttpStatus(response.status) === "down") {
-      response = await request(url, "GET", fetchImpl, timeoutMs, rejectUnauthorized);
+    const started = performance.now();
+    let response = await request(url, method ?? "HEAD", fetchImpl, timeoutMs, rejectUnauthorized, followRedirects);
+    if (!method && classifyHttpStatus(response.status) === "down") {
+      response = await request(url, "GET", fetchImpl, timeoutMs, rejectUnauthorized, followRedirects);
     }
+    const status = expectedStatuses?.length
+      ? (expectedStatuses.includes(response.status) ? "up" : "down")
+      : classifyHttpStatus(response.status);
 
     return {
-      status: classifyHttpStatus(response.status),
+      status,
       httpStatus: response.status,
+      responseTimeMs: Math.round(performance.now() - started),
       detail: `HTTP ${response.status}`
     };
   } catch (error) {
@@ -107,12 +120,17 @@ export function createStatusChecker(getConfig, options = {}) {
           groupIndex,
           panelIndex,
           itemIndex,
-          url: item.url,
+          url: (() => {
+            if (!item.health?.path) return item.url;
+            try { const target = new URL(item.url); target.pathname = item.health.path; return target.toString(); }
+            catch { return item.url; }
+          })(),
+          health: item.health,
           rejectUnauthorized: item.certificates?.["reject-unauthorized"] !== false
         }))
       )
     );
-    const signature = JSON.stringify(targets.map(({ url, rejectUnauthorized }) => ({ url, rejectUnauthorized })));
+    const signature = JSON.stringify(targets.map(({ url, rejectUnauthorized, health }) => ({ url, rejectUnauthorized, health })));
     const now = Date.now();
 
     if (cachedResults && signature === cachedSignature && now - cachedAt < ttlMs) {
@@ -122,9 +140,16 @@ export function createStatusChecker(getConfig, options = {}) {
 
     cachedSignature = signature;
     const currentCheck = mapWithConcurrency(targets, options.concurrency ?? 8,
-      async ({ id, name, groupIndex, panelIndex, itemIndex, url, rejectUnauthorized }) => ({
+      async ({ id, name, groupIndex, panelIndex, itemIndex, url, rejectUnauthorized, health }) => ({
         id, name, groupIndex, panelIndex, itemIndex,
-        ...(await checkUrl(url, { ...options, rejectUnauthorized }))
+        ...(await checkUrl(url, {
+          ...options,
+          timeoutMs: health?.["timeout-ms"] ?? options.timeoutMs,
+          rejectUnauthorized,
+          method: health?.method,
+          expectedStatuses: health?.["expected-status"],
+          followRedirects: health?.["follow-redirects"] === true
+        }))
       }));
     pendingCheck = currentCheck;
 

@@ -1,6 +1,6 @@
 services:
   scope:
-    image: ${SCOPE_IMAGE:-ghcr.io/vt-global-de/scope:1.0.0}
+    image: ${SCOPE_IMAGE:-ghcr.io/vt-global-de/scope:1.1.0}
     container_name: scope
     restart: unless-stopped
     depends_on:
@@ -54,6 +54,11 @@ services:
       CERTIFICATE_CACHE_TTL_MS: ${CERTIFICATE_CACHE_TTL_MS:-30000}
       DNS_CHECK_TIMEOUT_MS: ${DNS_CHECK_TIMEOUT_MS:-4000}
       DNS_CACHE_TTL_MS: ${DNS_CACHE_TTL_MS:-30000}
+
+      # Read-only discovery and optional provider credentials referenced through token-env
+      DISCOVERY_TIMEOUT_MS: ${DISCOVERY_TIMEOUT_MS:-5000}
+      DISCOVERY_CACHE_TTL_MS: ${DISCOVERY_CACHE_TTL_MS:-60000}
+      DISCOVERY_EDGE_TOKEN: ${DISCOVERY_EDGE_TOKEN:-}
 
       # Persistent status history
       STATUS_HISTORY_INTERVAL_MS: ${STATUS_HISTORY_INTERVAL_MS:-60000}

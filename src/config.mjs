@@ -70,7 +70,7 @@ export function validateConfig(config) {
           throw new Error(`${itemPath} muss ein Objekt sein.`);
         }
         const unknownKey = Object.keys(item).find((key) => ![
-          "id", "type", "name", "description", "url", "icon", "tags", "favorite", "scope", "depends-on", "certificates", "dns"
+          "id", "type", "name", "description", "url", "icon", "tags", "favorite", "scope", "depends-on", "certificates", "dns", "health"
         ].includes(key));
         if (unknownKey) throw new Error(`${itemPath}.${unknownKey} ist unbekannt.`);
         if (item.type !== undefined && item.type !== "link") {
@@ -110,6 +110,36 @@ export function validateConfig(config) {
           const value = item[feature];
           if (value !== undefined && typeof value !== "boolean" && (!value || typeof value !== "object" || Array.isArray(value))) {
             throw new Error(`${itemPath}.${feature} muss true, false oder ein Objekt sein.`);
+          }
+        }
+        if (item.health !== undefined) {
+          if (!item.health || typeof item.health !== "object" || Array.isArray(item.health)) {
+            throw new Error(`${itemPath}.health muss ein Objekt sein.`);
+          }
+          const unknownHealthKey = Object.keys(item.health).find((key) => ![
+            "path", "method", "expected-status", "follow-redirects", "timeout-ms"
+          ].includes(key));
+          if (unknownHealthKey) throw new Error(`${itemPath}.health.${unknownHealthKey} ist unbekannt.`);
+          if (item.health.path !== undefined && (typeof item.health.path !== "string" || !item.health.path.startsWith("/"))) {
+            throw new Error(`${itemPath}.health.path muss mit / beginnen.`);
+          }
+          if (item.health.method !== undefined && !["HEAD", "GET"].includes(item.health.method)) {
+            throw new Error(`${itemPath}.health.method muss HEAD oder GET sein.`);
+          }
+          if (item.health["expected-status"] !== undefined && (!Array.isArray(item.health["expected-status"])
+            || item.health["expected-status"].some((status) => !Number.isInteger(status) || status < 100 || status > 599))) {
+            throw new Error(`${itemPath}.health.expected-status muss eine Liste gültiger HTTP-Statuscodes sein.`);
+          }
+          if (item.health["expected-status"]
+            && new Set(item.health["expected-status"]).size !== item.health["expected-status"].length) {
+            throw new Error(`${itemPath}.health.expected-status enthält doppelte Werte.`);
+          }
+          if (item.health["follow-redirects"] !== undefined && typeof item.health["follow-redirects"] !== "boolean") {
+            throw new Error(`${itemPath}.health.follow-redirects muss true oder false sein.`);
+          }
+          if (item.health["timeout-ms"] !== undefined && (!Number.isInteger(item.health["timeout-ms"])
+            || item.health["timeout-ms"] < 250 || item.health["timeout-ms"] > 60000)) {
+            throw new Error(`${itemPath}.health.timeout-ms muss zwischen 250 und 60000 liegen.`);
           }
         }
       });

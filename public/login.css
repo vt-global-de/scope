@@ -59,6 +59,7 @@ button { color: inherit; }
 .login-controls { position: absolute; top: 1.5rem; right: 1.5rem; display: flex; gap: .6rem; }
 .control-toggle { position: relative; display: grid; width: 4.25rem; height: 2rem; cursor: pointer; grid-template-columns: 1fr 1fr; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0; background: var(--surface-solid); color: var(--muted); }
 .control-toggle span { z-index: 1; display: grid; place-items: center; font-family: ui-monospace, monospace; font-size: .56rem; font-weight: 700; }
+.control-toggle .theme-icon { display: block; width: .78rem; height: .78rem; }
 .control-toggle i { position: absolute; top: 3px; left: 3px; width: 1.82rem; height: 1.5rem; border: 1px solid var(--border); border-radius: 999px; background: var(--background); box-shadow: 0 2px 7px rgba(0, 0, 0, .1); transition: transform 180ms ease; }
 :root[lang="de"] .language-toggle i { transform: translateX(1.96rem); }
 :root[data-theme="dark"] .theme-toggle i { transform: translateX(1.96rem); }

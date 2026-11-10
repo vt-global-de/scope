@@ -97,6 +97,43 @@ export const migrations = [
       await sql`CREATE INDEX IF NOT EXISTS maintenance_window_target_idx
         ON maintenance_window (target_type, target_id, starts_at, ends_at)`;
     }
+  },
+  {
+    version: 3,
+    name: "discovery-history",
+    async up(sql) {
+      await sql`CREATE TABLE IF NOT EXISTS discovery_snapshot (
+        id BIGSERIAL PRIMARY KEY, fingerprint TEXT NOT NULL, payload JSONB NOT NULL,
+        observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS discovery_snapshot_observed_at_idx ON discovery_snapshot (observed_at DESC)`;
+    }
+  },
+  {
+    version: 4,
+    name: "discovery-review-queue",
+    async up(sql) {
+      await sql`CREATE TABLE IF NOT EXISTS discovery_proposal (
+        id BIGSERIAL PRIMARY KEY, proposal_key TEXT NOT NULL UNIQUE,
+        suggestion JSONB NOT NULL, state TEXT NOT NULL DEFAULT 'pending'
+          CHECK (state IN ('pending', 'accepted', 'rejected', 'ignored')),
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        target_group TEXT NOT NULL DEFAULT '', target_category TEXT NOT NULL DEFAULT '',
+        first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        reviewed_at TIMESTAMPTZ, reviewed_by TEXT NOT NULL DEFAULT ''
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS discovery_proposal_state_idx ON discovery_proposal (active, state, last_seen_at DESC)`;
+    }
+  },
+  {
+    version: 5,
+    name: "simplify-discovery-decisions",
+    async up(sql) {
+      await sql`UPDATE discovery_proposal SET state = 'rejected' WHERE state = 'ignored'`;
+      await sql`ALTER TABLE discovery_proposal DROP CONSTRAINT IF EXISTS discovery_proposal_state_check`;
+      await sql`ALTER TABLE discovery_proposal ADD CONSTRAINT discovery_proposal_state_check
+        CHECK (state IN ('pending', 'accepted', 'rejected'))`;
+    }
   }
 ];
 

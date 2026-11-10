@@ -40,6 +40,46 @@ test("requires a protocol banner in handshake mode", async () => {
   assert.equal(result.code, "handshake_ok");
 });
 
+test("accepts fragmented SSH banners and permitted pre-banner lines", async () => {
+  const socket = new EventEmitter();
+  socket.setTimeout = () => {};
+  socket.destroy = () => {};
+  socket.write = () => {};
+  const connectImpl = () => {
+    queueMicrotask(() => {
+      socket.emit("connect");
+      socket.emit("data", Buffer.from("Authorized access only\r\nSS"));
+      socket.emit("data", Buffer.from("H-2.0-OpenSSH_9.6\r\n"));
+    });
+    return socket;
+  };
+  const result = await checkRemoteConnection({
+    id: "fragmented-ssh", protocol: "ssh", probe: "handshake", parameters: { hostname: "127.0.0.1", port: "22" }
+  }, { connectImpl });
+  assert.equal(result.status, "up");
+  assert.equal(result.code, "handshake_ok");
+});
+
+test("accepts fragmented RDP negotiation responses", async () => {
+  const socket = new EventEmitter();
+  socket.setTimeout = () => {};
+  socket.destroy = () => {};
+  socket.write = () => {};
+  const connectImpl = () => {
+    queueMicrotask(() => {
+      socket.emit("connect");
+      socket.emit("data", Buffer.from([0x03]));
+      socket.emit("data", Buffer.from([0x00, 0x00, 0x13]));
+    });
+    return socket;
+  };
+  const result = await checkRemoteConnection({
+    id: "fragmented-rdp", protocol: "rdp", probe: "handshake", parameters: { hostname: "127.0.0.1", port: "3389" }
+  }, { connectImpl });
+  assert.equal(result.status, "up");
+  assert.equal(result.code, "handshake_ok");
+});
+
 test("reports a refused TCP target as down", async () => {
   const socket = new EventEmitter();
   socket.setTimeout = () => {};

@@ -45,11 +45,10 @@
             </a>
           </nav>
         </div>
-
-        <button id="settings-button" class="sidebar-settings" type="button" aria-label="Open settings" title="Open settings" hidden>
+        <a id="admin-nav-link" class="sidebar-admin" href="#admin" hidden>
           <span class="module-icon" aria-hidden="true">⚙</span>
-          <span><strong data-i18n="settings">Settings</strong><small id="settings-user"></small></span>
-        </button>
+          <span><strong data-i18n="administration">Administration</strong></span>
+        </a>
         <div class="sidebar-status">
           <p class="sidebar-label" data-i18n="status">Status</p>
           <div class="status-legend" aria-label="Status legend" data-i18n-aria-label="statusLegend">
@@ -76,18 +75,40 @@
             </div>
             <span id="view-count" class="view-count" hidden></span>
             <span class="readonly-badge" data-i18n="configDriven">Config-driven</span>
-            <button id="density-toggle" class="density-toggle" type="button" aria-label="Use compact layout" title="Use compact layout">↔</button>
-            <button id="logout-button" class="logout-button" type="button" data-i18n="logout" hidden>Log out</button>
             <button id="language-toggle" class="language-toggle" type="button" aria-label="Switch language to German">
               <span class="language-option language-option-en" aria-hidden="true">EN</span>
               <span class="language-option language-option-de" aria-hidden="true">DE</span>
               <span class="language-toggle-thumb" aria-hidden="true"></span>
             </button>
             <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
-              <span class="theme-option theme-option-light" aria-hidden="true">☀</span>
-              <span class="theme-option theme-option-dark" aria-hidden="true">☾</span>
+              <span class="theme-option theme-option-light" aria-hidden="true">
+                <svg class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false">
+                  <circle cx="12" cy="12" r="3.5"></circle>
+                  <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M19.07 4.93l-1.42 1.42M6.35 17.65l-1.42 1.42"></path>
+                </svg>
+              </span>
+              <span class="theme-option theme-option-dark" aria-hidden="true">
+                <svg class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8 8.5 8.5 0 1 0 20.2 15.2Z"></path>
+                </svg>
+              </span>
               <span class="theme-toggle-thumb" aria-hidden="true"></span>
             </button>
+            <div id="profile-control" class="profile-control">
+              <button id="settings-button" class="profile-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Open account menu" hidden>
+                <span id="profile-avatar" class="profile-avatar" aria-hidden="true">S</span>
+                <span id="settings-user">Account</span>
+                <span class="profile-chevron" aria-hidden="true">⌄</span>
+              </button>
+              <div id="profile-menu" class="profile-menu" role="menu" hidden>
+                <button id="profile-settings-button" type="button" role="menuitem" hidden>
+                  <span aria-hidden="true">◉</span><span data-i18n="settings">Settings</span>
+                </button>
+                <button id="logout-button" type="button" role="menuitem" hidden>
+                  <span aria-hidden="true">↪</span><span data-i18n="logout">Log out</span>
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -118,7 +139,12 @@
             <div class="environment-panel">
               <span id="service-group-label" class="environment-label">Groups</span>
               <nav id="group-nav" class="environment-nav" aria-label="Service groups"></nav>
-              <button id="service-layout-toggle" class="layout-toggle" type="button" aria-pressed="false" data-i18n="customizeLayout">Customize layout</button>
+              <div class="service-page-actions">
+                <button id="service-inbox-button" class="layout-toggle service-inbox-button" type="button" aria-haspopup="dialog" aria-controls="service-inbox-dialog" hidden>
+                  <span data-i18n="addServices">Add services</span><output id="service-inbox-count" hidden>0</output>
+                </button>
+                <button id="service-layout-toggle" class="layout-toggle" type="button" aria-pressed="false" data-i18n="customizeLayout">Customize layout</button>
+              </div>
             </div>
             <div id="service-layout-toolbar" class="layout-toolbar" hidden>
               <span data-i18n="layoutEditHint">Move, resize, or hide panels.</span>
@@ -167,6 +193,85 @@
               <div id="notification-history-list" class="notification-history-list"></div>
             </section>
           </section>
+
+          <section id="admin-view" class="feature-view" hidden>
+            <nav id="admin-tabs" class="admin-tabs" aria-label="Administration sections">
+              <button type="button" data-admin-tab="users" aria-current="page" data-i18n="userManagement" hidden>User management</button>
+              <button type="button" data-admin-tab="audit" data-i18n="auditLog" hidden>Audit log</button>
+            </nav>
+            <p id="admin-status" class="settings-status" aria-live="polite"></p>
+
+            <div id="admin-users-pane" class="admin-pane" hidden>
+              <section id="settings-user-management" class="settings-section">
+                <div><h3 data-i18n="userManagement">User management</h3><p data-i18n="userManagementDescription">Create personal accounts and control their access.</p></div>
+                <div class="settings-fields">
+                  <input id="settings-new-username" autocomplete="off" placeholder="Username" data-i18n-placeholder="username">
+                  <input id="settings-new-display-name" autocomplete="off" placeholder="Display name" data-i18n-placeholder="displayName">
+                  <input id="settings-new-user-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Initial password" data-i18n-placeholder="initialPassword">
+                  <select id="settings-new-user-role"><option value="viewer" data-i18n="viewer">Viewer</option><option value="operator" data-i18n="operator">Operator</option><option value="admin" data-i18n="administrator">Administrator</option></select>
+                  <button id="settings-create-user" type="button" data-i18n="createUser">Create user</button>
+                </div>
+                <div id="settings-users" class="settings-users"></div>
+              </section>
+            </div>
+
+            <div id="admin-audit-pane" class="admin-pane" hidden>
+              <section id="settings-audit" class="settings-section">
+                <div><h3 data-i18n="auditLog">Audit log</h3><p data-i18n="auditLogDescription">Recent security and administrative actions.</p></div>
+                <div id="settings-audit-events" class="settings-users"></div>
+              </section>
+            </div>
+          </section>
+
+          <dialog id="service-inbox-dialog" class="service-inbox-dialog">
+            <div class="service-inbox-shell">
+              <header>
+                <div>
+                  <p data-i18n="serviceInboxKicker">Config-driven onboarding</p>
+                  <h2 data-i18n="serviceInbox">Service inbox</h2>
+                  <small data-i18n="serviceInboxDescription">Review discovered services and prepare the next inventory.yaml.</small>
+                </div>
+                <button id="service-inbox-close" type="button" aria-label="Close service inbox" data-i18n-aria-label="closeServiceInbox">×</button>
+              </header>
+              <div id="service-inbox-tabs" class="service-inbox-tabs" role="tablist">
+                <button type="button" role="tab" data-service-inbox-view="services" aria-controls="service-inbox-services-view" aria-selected="true" data-i18n="serviceInboxServices">Services</button>
+                <button type="button" role="tab" data-service-inbox-view="providers" aria-controls="service-inbox-providers-view" aria-selected="false" data-i18n="discoveryProviderStatus">Discovery provider status</button>
+              </div>
+              <section id="service-inbox-services-view" class="service-inbox-view service-inbox-services-view" role="tabpanel">
+                <div class="service-inbox-toolbar">
+                  <div id="proposal-filters" class="proposal-filters" role="group" aria-label="Review status" data-i18n-aria-label="reviewStatus">
+                    <button type="button" data-proposal-filter="pending" aria-pressed="true"><span data-i18n="proposal_pending">Pending</span><output>0</output></button>
+                    <button type="button" data-proposal-filter="accepted" aria-pressed="false"><span data-i18n="proposal_accepted">Accepted</span><output>0</output></button>
+                    <button type="button" data-proposal-filter="rejected" aria-pressed="false"><span data-i18n="proposal_rejected">Rejected</span><output>0</output></button>
+                    <button type="button" data-proposal-filter="all" aria-pressed="false"><span data-i18n="allProposals">All</span><output>0</output></button>
+                  </div>
+                  <div class="service-inbox-tools">
+                    <input id="proposal-search" type="search" autocomplete="off" data-i18n-placeholder="searchProposals" placeholder="Search discoveries">
+                    <button id="service-inbox-refresh" type="button" data-i18n="refreshDiscovery">Refresh</button>
+                  </div>
+                </div>
+                <div id="service-inbox-error" class="error" role="alert" hidden></div>
+                <div id="proposal-list" class="proposal-list" aria-live="polite"></div>
+                <footer>
+                  <div class="service-inbox-source-note">
+                    <span aria-hidden="true">!</span>
+                    <div>
+                    <strong data-i18n="inventoryRemainsSource">inventory.yaml remains the source of truth.</strong>
+                    <small data-i18n="serviceInboxExportHint">Copy or download the merged file, commit it to its source repository, and redeploy Scope.</small>
+                    <span id="service-inbox-status" aria-live="polite"></span>
+                    </div>
+                  </div>
+                  <div class="service-inbox-export-actions">
+                    <button id="service-inbox-copy" type="button" data-i18n="copyMergedInventory">Copy merged inventory</button>
+                    <a href="/api/admin/discovery-export?format=full" download="inventory.yaml" data-i18n="downloadMergedInventory">Download inventory</a>
+                  </div>
+                </footer>
+              </section>
+              <section id="service-inbox-providers-view" class="service-inbox-view service-inbox-providers-view" role="tabpanel" hidden>
+                <div id="service-inbox-providers" class="service-inbox-providers" aria-label="Discovery provider status" data-i18n-aria-label="discoveryProviderStatus" aria-live="polite"></div>
+              </section>
+            </div>
+          </dialog>
 
           <section id="session-view" class="session-view" hidden>
             <div class="session-toolbar">
@@ -254,24 +359,17 @@
               <button id="settings-change-password" type="button" data-i18n="changePassword">Change password</button>
             </div>
           </section>
-          <section id="settings-user-management" class="settings-section" hidden>
-            <div><h3 data-i18n="userManagement">User management</h3><p data-i18n="userManagementDescription">Create personal accounts and control their access.</p></div>
-            <div class="settings-fields">
-              <input id="settings-new-username" autocomplete="off" placeholder="Username" data-i18n-placeholder="username">
-              <input id="settings-new-display-name" autocomplete="off" placeholder="Display name" data-i18n-placeholder="displayName">
-              <input id="settings-new-user-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Initial password" data-i18n-placeholder="initialPassword">
-              <select id="settings-new-user-role"><option value="viewer" data-i18n="viewer">Viewer</option><option value="operator" data-i18n="operator">Operator</option><option value="admin" data-i18n="administrator">Administrator</option></select>
-              <button id="settings-create-user" type="button" data-i18n="createUser">Create user</button>
-            </div>
-            <div id="settings-users" class="settings-users"></div>
-          </section>
-          <section id="settings-audit" class="settings-section" hidden>
-            <div><h3 data-i18n="auditLog">Audit log</h3><p data-i18n="auditLogDescription">Recent security and administrative actions.</p></div>
-            <div id="settings-audit-events" class="settings-users"></div>
-          </section>
           <p id="settings-status" class="settings-status" aria-live="polite"></p>
         </div>
       </form>
+    </dialog>
+    <dialog id="diagnostics-dialog" class="diagnostics-dialog">
+      <div class="diagnostics-shell">
+        <header><div><p data-i18n="troubleshooting">Troubleshooting</p><h2 id="diagnostics-title"></h2></div><button id="diagnostics-close" type="button" aria-label="Close">×</button></header>
+        <p id="diagnostics-summary" class="diagnostics-summary"></p>
+        <div id="diagnostics-steps" class="diagnostics-steps"></div>
+        <p class="diagnostics-hint" data-i18n="diagnosticsHint">The checks are read-only and do not change the target.</p>
+      </div>
     </dialog>
   </body>
 </html>

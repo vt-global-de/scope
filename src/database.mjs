@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 import { runMigrations } from "./migrations.mjs";
 
 function disabledDatabase() {
@@ -10,6 +11,11 @@ function disabledDatabase() {
     async recordLaunch() {},
     async recordStatuses() { return []; },
     async statusHistory() { return { summary: { total: 0, up: 0, down: 0 }, events: [], targets: [], timeline: [] }; },
+    async recordDiscoverySnapshot() {},
+    async discoveryHistory() { return []; },
+    async syncDiscoveryProposals() {},
+    async listDiscoveryProposals() { return []; },
+    async updateDiscoveryProposal() { return null; },
     async pruneHistory() {},
     async countUsers() { return 0; },
     async createInitialUser() { throw new Error("Benutzerkonten benötigen PostgreSQL."); },
@@ -241,6 +247,70 @@ export function createDatabase(databaseUrl = process.env.DATABASE_URL) {
         }))
       };
     },
+    async recordDiscoverySnapshot(snapshot) {
+      const payload = {
+        providers: snapshot.snapshots.map((item) => ({
+          id: item.provider.id, status: item.status, targets: item.targets.length, routes: item.routes.length, error: item.error ?? null
+        })),
+        drift: snapshot.drift
+      };
+      const fingerprint = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+      const [latest] = await sql`SELECT fingerprint, observed_at FROM discovery_snapshot ORDER BY observed_at DESC LIMIT 1`;
+      if (latest?.fingerprint === fingerprint && Date.now() - latest.observed_at.getTime() < 15 * 60 * 1000) return;
+      await sql`INSERT INTO discovery_snapshot (fingerprint, payload) VALUES (${fingerprint}, ${sql.json(payload)})`;
+    },
+    async discoveryHistory({ limit = 20 } = {}) {
+      const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+      const rows = await sql`SELECT payload, observed_at FROM discovery_snapshot ORDER BY observed_at DESC LIMIT ${safeLimit}`;
+      return rows.map((row) => ({ ...row.payload, observedAt: row.observed_at.toISOString() }));
+    },
+    async syncDiscoveryProposals(suggestions) {
+      await sql.begin(async (transaction) => {
+        await transaction`UPDATE discovery_proposal SET active = FALSE`;
+        for (const suggestion of suggestions) {
+          const proposalKey = `${suggestion.providerId ?? "discovery"}:${suggestion.url}`.slice(0, 500);
+          await transaction`
+            INSERT INTO discovery_proposal (proposal_key, suggestion, active)
+            VALUES (${proposalKey}, ${sql.json(suggestion)}, TRUE)
+            ON CONFLICT (proposal_key) DO UPDATE SET
+              suggestion = CASE
+                WHEN discovery_proposal.state IN ('accepted', 'rejected') THEN discovery_proposal.suggestion
+                ELSE EXCLUDED.suggestion
+              END,
+              active = TRUE, last_seen_at = NOW()
+          `;
+        }
+      });
+    },
+    async listDiscoveryProposals() {
+      const rows = await sql`
+        SELECT id, proposal_key, suggestion, state, target_group, target_category,
+               first_seen_at, last_seen_at, reviewed_at, reviewed_by
+        FROM discovery_proposal
+        WHERE active = TRUE
+        ORDER BY CASE state WHEN 'pending' THEN 0 WHEN 'accepted' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END,
+                 last_seen_at DESC
+      `;
+      return rows.map((row) => ({
+        id: String(row.id), key: row.proposal_key, suggestion: row.suggestion, state: row.state,
+        targetGroup: row.target_group, targetCategory: row.target_category,
+        firstSeenAt: row.first_seen_at.toISOString(), lastSeenAt: row.last_seen_at.toISOString(),
+        reviewedAt: row.reviewed_at?.toISOString() ?? null, reviewedBy: row.reviewed_by
+      }));
+    },
+    async updateDiscoveryProposal(id, { state, targetGroup = "", targetCategory = "", suggestion, reviewedBy = "" }) {
+      const [row] = suggestion ? await sql`
+        UPDATE discovery_proposal SET state = ${state}, target_group = ${targetGroup},
+          target_category = ${targetCategory}, suggestion = ${sql.json(suggestion)},
+          reviewed_at = NOW(), reviewed_by = ${reviewedBy}
+        WHERE id = ${id} RETURNING id
+      ` : await sql`
+        UPDATE discovery_proposal SET state = ${state}, target_group = ${targetGroup},
+          target_category = ${targetCategory}, reviewed_at = NOW(), reviewed_by = ${reviewedBy}
+        WHERE id = ${id} RETURNING id
+      `;
+      return row ? String(row.id) : null;
+    },
     async pruneHistory() {
       const configured = Number.parseInt(process.env.STATUS_HISTORY_RETENTION_DAYS ?? "90", 10);
       const days = Number.isInteger(configured) && configured > 0 ? configured : 90;
@@ -250,7 +320,8 @@ export function createDatabase(databaseUrl = process.env.DATABASE_URL) {
         sql`DELETE FROM audit_event WHERE occurred_at < NOW() - (365 * INTERVAL '1 day')`,
         sql`DELETE FROM notification_outbox WHERE created_at < NOW() - (${days} * INTERVAL '1 day')`,
         sql`DELETE FROM login_attempt WHERE updated_at < NOW() - INTERVAL '1 day'`,
-        sql`DELETE FROM maintenance_window WHERE ends_at < NOW() - INTERVAL '30 days'`
+        sql`DELETE FROM maintenance_window WHERE ends_at < NOW() - INTERVAL '30 days'`,
+        sql`DELETE FROM discovery_snapshot WHERE observed_at < NOW() - (${days} * INTERVAL '1 day')`
       ]);
     },
     async countUsers() {
