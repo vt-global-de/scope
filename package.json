@@ -23,6 +23,6 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
-    "@playwright/test": "1.56.1"
+    "@playwright/test": "1.64.1"
   }
 }
