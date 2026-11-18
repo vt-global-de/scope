@@ -35,6 +35,26 @@ services:
       timeout-ms: 3000
 ```
 
+### Probe frequency and DNS traffic
+
+Scope performs operational service, remote and Docker checks at most once per minute by default, regardless of how many users have the WebUI open. Successful hostname resolutions are shared between HTTP, TLS, Docker and remote probes for five minutes. Explicit DNS checks also use a five-minute result cache, while certificate metadata is refreshed hourly because certificate validity does not change on a minute-by-minute basis.
+
+Discovery providers are not part of the recurring status snapshot. They are queried only when an administrator opens or explicitly refreshes the Service Inbox.
+
+The defaults can be adjusted through environment variables when a deployment needs a different freshness/load balance:
+
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `STATUS_CACHE_TTL_MS` | `60000` | Service HTTP checks |
+| `REMOTE_STATUS_CACHE_TTL_MS` | `60000` | SSH/RDP reachability checks |
+| `MONITORING_CACHE_TTL_MS` | `60000` | Docker metrics |
+| `DNS_LOOKUP_CACHE_TTL_MS` | `300000` | Shared hostname resolution for network probes |
+| `DNS_CACHE_TTL_MS` | `300000` | Explicit inventory DNS checks |
+| `CERTIFICATE_CACHE_TTL_MS` | `3600000` | TLS certificate metadata |
+| `DISCOVERY_CACHE_TTL_MS` | `300000` | On-demand provider results |
+
+Lower values make status changes visible sooner but increase network and DNS load. Setting a cache below `STATUS_HISTORY_INTERVAL_MS` can cause WebUI refreshes and the history worker to initiate separate probe rounds.
+
 ## Read-only discovery
 
 Discovery is optional and never rewrites `inventory.yaml`. All providers emit the same normalized model, so drift comparison and diagnostics are independent of the software supplying the data.

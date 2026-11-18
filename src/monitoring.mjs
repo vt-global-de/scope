@@ -17,7 +17,7 @@ async function tlsOptions(connection) {
   return options;
 }
 
-export async function dockerApiRequest(connection, path, { timeoutMs = 10000, requestImpl } = {}) {
+export async function dockerApiRequest(connection, path, { timeoutMs = 10000, requestImpl, lookup } = {}) {
   const secure = connection.type === "tls";
   const implementation = requestImpl ?? (secure ? httpsRequest : httpRequest);
   const options = connection.type === "socket"
@@ -27,6 +27,7 @@ export async function dockerApiRequest(connection, path, { timeoutMs = 10000, re
         port: connection.port,
         path,
         method: "GET",
+        ...(lookup ? { lookup } : {}),
         ...(secure ? await tlsOptions(connection) : {})
       };
 
@@ -119,7 +120,7 @@ export async function collectDockerHost(rawHost, options = {}) {
 }
 
 export function createMonitoringCollector(getConfig, options = {}) {
-  const ttlMs = options.ttlMs ?? 30000;
+  const ttlMs = options.ttlMs ?? 60000;
   let cache;
   let cachedAt = 0;
   let signature = "";

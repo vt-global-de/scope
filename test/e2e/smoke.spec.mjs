@@ -87,6 +87,94 @@ test("offers protocol-specific remote controls without overflowing the session",
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
 });
 
+for (const device of [
+  { name: "smartphone", width: 390, height: 844, mobile: true },
+  { name: "tablet", width: 820, height: 1180, mobile: false }
+]) {
+  test(`keeps the dashboard usable on a ${device.name} viewport`, async ({ page }) => {
+    await page.setViewportSize({ width: device.width, height: device.height });
+    await page.goto("/");
+    await page.locator("#dashboard-nav-link").click();
+    await expect(page.locator("#dashboard-view")).toBeVisible();
+    await expect(page.locator(".card").first()).toBeVisible();
+
+    const layout = await page.evaluate((mobile) => {
+      const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+      const overlaps = (left, right) => !(
+        left.right <= right.left || right.right <= left.left || left.bottom <= right.top || right.bottom <= left.top
+      );
+      const sidebar = rect("#app-sidebar");
+      const topbar = rect(".topbar");
+      const context = rect(".view-context");
+      const actions = rect(".header-actions");
+      const title = document.querySelector("#view-title");
+      const card = rect(".card");
+      const cardParent = document.querySelector(".card").closest(".grid").getBoundingClientRect();
+      return {
+        viewportWidth: window.innerWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+        rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+        sidebarPosition: getComputedStyle(document.querySelector("#app-sidebar")).position,
+        sidebarBottom: sidebar.bottom,
+        sidebarHeight: sidebar.height,
+        brandDisplay: getComputedStyle(document.querySelector("#brand-link")).display,
+        topbarHeight: topbar.height,
+        headerOverlap: overlaps(context, actions),
+        titleClientWidth: title.clientWidth,
+        titleScrollWidth: title.scrollWidth,
+        titleWhiteSpace: getComputedStyle(title).whiteSpace,
+        cardWidth: card.width,
+        cardParentWidth: cardParent.width,
+        bodyPaddingBottom: Number.parseFloat(getComputedStyle(document.body).paddingBottom),
+        mobile
+      };
+    }, device.mobile);
+
+    expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth + 1);
+    expect(layout.bodyScrollWidth).toBeLessThanOrEqual(layout.viewportWidth + 1);
+    expect(layout.headerOverlap).toBe(false);
+    expect(layout.cardWidth).toBeLessThanOrEqual(layout.cardParentWidth + 1);
+    expect(layout.topbarHeight).toBeLessThanOrEqual(74);
+
+    if (device.mobile) {
+      expect(layout.rootFontSize).toBe(16);
+      expect(layout.sidebarPosition).toBe("fixed");
+      expect(layout.sidebarBottom).toBeCloseTo(device.height, 0);
+      expect(layout.sidebarHeight).toBeGreaterThanOrEqual(60);
+      expect(layout.brandDisplay).toBe("none");
+      expect(layout.bodyPaddingBottom).toBeGreaterThanOrEqual(60);
+      expect(layout.titleScrollWidth).toBeLessThanOrEqual(layout.titleClientWidth + 1);
+      expect(layout.titleWhiteSpace).toBe("normal");
+    } else {
+      expect(layout.rootFontSize).toBe(20);
+      expect(layout.sidebarPosition).toBe("static");
+      expect(layout.sidebarHeight).toBeLessThanOrEqual(74);
+      expect(layout.brandDisplay).not.toBe("none");
+    }
+
+    await page.locator("#service-inbox-button").click();
+    await expect(page.locator("#service-inbox-dialog")).toBeVisible();
+    const dialog = await page.locator("#service-inbox-dialog").evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        left: bounds.left,
+        top: bounds.top,
+        right: bounds.right,
+        bottom: bounds.bottom,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth
+      };
+    });
+    expect(dialog.left).toBeGreaterThanOrEqual(-1);
+    expect(dialog.top).toBeGreaterThanOrEqual(-1);
+    expect(dialog.right).toBeLessThanOrEqual(device.width + 1);
+    expect(dialog.bottom).toBeLessThanOrEqual(device.height + 1);
+    expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth + 1);
+    await page.locator("#service-inbox-close").click();
+  });
+}
+
 test("keeps card utilities separated and only divides stacked server statistics", async ({ page }) => {
   await page.goto("/");
   const result = await page.evaluate(async () => {
@@ -133,9 +221,15 @@ test("keeps card utilities separated and only divides stacked server statistics"
       service.remove();
     }
 
-    for (const width of [300, 700, 1100]) {
+    for (const { width, cardWidth } of [
+      { width: 300, cardWidth: "small" },
+      { width: 700, cardWidth: "medium" },
+      { width: 1100, cardWidth: "medium" },
+      { width: 1100, cardWidth: "large" }
+    ]) {
       const server = document.createElement("div");
       server.className = "layout-card-shell monitoring-card-shell";
+      server.dataset.cardWidth = cardWidth;
       server.style.width = `${width}px`;
       server.innerHTML = `
         <article class="monitoring-card" data-status="down">
@@ -159,7 +253,7 @@ test("keeps card utilities separated and only divides stacked server statistics"
       upReference.className = "legend-dot up";
       document.body.append(upReference);
       output.push({
-        name: `server-${width}`,
+        name: `server-${width}-${cardWidth}`,
         serverOverlap: utilities.some((left, index) => utilities.slice(index + 1).some((right) => overlaps(left, right))),
         serverOverflow: utilities.some((item) => item.left < bounds.left || item.right > bounds.right),
         serverTitleWidth: server.querySelector("h3").getBoundingClientRect().width,
@@ -184,9 +278,10 @@ test("keeps card utilities separated and only divides stacked server statistics"
     expect(size.serverTitleWidth, size.name).toBeGreaterThan(80);
     expect(size.nestedStatusColor, size.name).toBe(size.expectedUpColor);
   }
-  expect(result.find((item) => item.name === "server-700").dividerTop).not.toBe("0px");
-  expect(result.find((item) => item.name === "server-1100").dividerTop).toBe("0px");
-  expect(result.find((item) => item.name === "server-1100").dividerLeft).toBe("0px");
+  expect(result.find((item) => item.name === "server-700-medium").dividerTop).not.toBe("0px");
+  expect(result.find((item) => item.name === "server-1100-medium").dividerTop).not.toBe("0px");
+  expect(result.find((item) => item.name === "server-1100-large").dividerTop).toBe("0px");
+  expect(result.find((item) => item.name === "server-1100-large").dividerLeft).toBe("0px");
 });
 
 test("exposes healthy liveness and readiness endpoints", async ({ request }) => {

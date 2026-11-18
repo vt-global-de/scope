@@ -6,6 +6,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { createCertificateChecker } from "./certificates.mjs";
 import { createDatabase } from "./database.mjs";
 import { createDnsChecker } from "./dns-checks.mjs";
+import { createCachedLookup } from "./dns-cache.mjs";
 import { diagnoseServer, diagnoseUrl } from "./diagnostics.mjs";
 import { createDiscoveryManager, discoveryProviderDependencies } from "./discovery.mjs";
 import { mergeInventoryYaml, orderServiceFields, prepareDiscoveredService } from "./discovery-export.mjs";
@@ -90,6 +91,9 @@ const metrics = createMetricsRegistry({ version: packageInfo.version });
 let shuttingDown = false;
 let startupFailure;
 const checkConcurrency = Number.parseInt(process.env.STATUS_CHECK_CONCURRENCY ?? "8", 10);
+const cachedLookup = createCachedLookup({
+  ttlMs: Number.parseInt(process.env.DNS_LOOKUP_CACHE_TTL_MS ?? "300000", 10)
+});
 const sessions = createRemoteSessionManager({
   attachTimeoutMs: Number.parseInt(process.env.REMOTE_SESSION_ATTACH_TIMEOUT_MS ?? "30000", 10),
   maxDurationMs: Number.parseInt(process.env.REMOTE_SESSION_MAX_DURATION_MS ?? String(8 * 60 * 60 * 1000), 10),
@@ -98,25 +102,29 @@ const sessions = createRemoteSessionManager({
 });
 const getStatuses = createStatusChecker(getConfig, {
   timeoutMs: Number.parseInt(process.env.STATUS_CHECK_TIMEOUT_MS ?? "4000", 10),
-  ttlMs: Number.parseInt(process.env.STATUS_CACHE_TTL_MS ?? "30000", 10),
-  concurrency: checkConcurrency
+  ttlMs: Number.parseInt(process.env.STATUS_CACHE_TTL_MS ?? "60000", 10),
+  concurrency: checkConcurrency,
+  lookup: cachedLookup
 });
 const remoteStatusOptions = {
   timeoutMs: Number.parseInt(process.env.REMOTE_STATUS_CHECK_TIMEOUT_MS ?? "3000", 10),
-  concurrency: checkConcurrency
+  concurrency: checkConcurrency,
+  lookup: cachedLookup
 };
 const getRemoteStatuses = createRemoteStatusChecker(getRemoteConfig, {
   ...remoteStatusOptions,
-  ttlMs: Number.parseInt(process.env.REMOTE_STATUS_CACHE_TTL_MS ?? "30000", 10)
+  ttlMs: Number.parseInt(process.env.REMOTE_STATUS_CACHE_TTL_MS ?? "60000", 10)
 });
 const getMonitoring = createMonitoringCollector(getMonitoringConfig, {
   timeoutMs: Number.parseInt(process.env.MONITORING_CHECK_TIMEOUT_MS ?? "15000", 10),
-  ttlMs: Number.parseInt(process.env.MONITORING_CACHE_TTL_MS ?? "30000", 10),
-  concurrency: checkConcurrency
+  ttlMs: Number.parseInt(process.env.MONITORING_CACHE_TTL_MS ?? "60000", 10),
+  concurrency: checkConcurrency,
+  lookup: cachedLookup
 });
 const getDiscovery = createDiscoveryManager(getInventory, {
   timeoutMs: Number.parseInt(process.env.DISCOVERY_TIMEOUT_MS ?? "5000", 10),
-  ttlMs: Number.parseInt(process.env.DISCOVERY_CACHE_TTL_MS ?? "60000", 10)
+  ttlMs: Number.parseInt(process.env.DISCOVERY_CACHE_TTL_MS ?? "300000", 10),
+  lookup: cachedLookup
 });
 
 function exportableSuggestion(suggestion) {
@@ -254,15 +262,16 @@ const getCertificateStatuses = createCertificateChecker(async () => {
   return inventoryCapabilities(inventory).certificates ? inventoryCertificates(inventory) : [];
 }, {
   timeoutMs: Number.parseInt(process.env.CERTIFICATE_CHECK_TIMEOUT_MS ?? "5000", 10),
-  ttlMs: Number.parseInt(process.env.CERTIFICATE_CACHE_TTL_MS ?? "30000", 10),
-  concurrency: checkConcurrency
+  ttlMs: Number.parseInt(process.env.CERTIFICATE_CACHE_TTL_MS ?? "3600000", 10),
+  concurrency: checkConcurrency,
+  lookup: cachedLookup
 });
 const getDnsStatuses = createDnsChecker(async () => {
   const inventory = await getInventory();
   return inventoryCapabilities(inventory).dns ? inventoryDnsChecks(inventory) : [];
 }, {
   timeoutMs: Number.parseInt(process.env.DNS_CHECK_TIMEOUT_MS ?? "4000", 10),
-  ttlMs: Number.parseInt(process.env.DNS_CACHE_TTL_MS ?? "30000", 10),
+  ttlMs: Number.parseInt(process.env.DNS_CACHE_TTL_MS ?? "300000", 10),
   concurrency: checkConcurrency
 });
 
@@ -433,9 +442,6 @@ async function recordStatusSnapshot() {
   if (capabilities.monitoring) checks.push(getMonitoring().then((items) => persistStatuses("monitoring", items)));
   if (capabilities.certificates) checks.push(getCertificateStatuses().then((items) => persistStatuses("certificate", items)));
   if (capabilities.dns) checks.push(getDnsStatuses().then((items) => persistStatuses("dns", items)));
-  if (capabilities.inventory) checks.push(getDiscovery().then(async (discovery) => {
-    await persistDiscovery(discovery);
-  }));
   await Promise.all(checks);
 }
 
@@ -944,6 +950,14 @@ export function buildServer() {
         sendText(response, 200, stringifyYaml({
           categories: [{ id: "discovered-routes", name: "Discovered routes", services: discovery.drift.suggestions.map(exportableSuggestion) }]
         }), "application/yaml; charset=utf-8");
+        return;
+      }
+      if (url.pathname === "/api/admin/discovery-proposal-count") {
+        const user = await authenticatedUser(request);
+        if (passwordAuthEnabled && user?.role !== "admin") throw new HttpError(403, "Administratorrechte erforderlich.");
+        if (!inventoryCapabilities(inventory).inventory) throw new HttpError(404, "Discovery ist nicht konfiguriert.");
+        const proposals = await database.listDiscoveryProposals();
+        sendJson(response, 200, { pending: proposals.filter((proposal) => proposal.state === "pending").length });
         return;
       }
       if (url.pathname === "/api/admin/discovery-proposals") {

@@ -19,8 +19,13 @@ function fakeTls({ authorized = true, validTo = "Jan 01 00:00:00 2035 GMT" } = {
 test("checks TLS certificate metadata", async () => {
   const owner = { kind: "service", groupIndex: 0, panelIndex: 0, itemIndex: 0 };
   const certificate = { id: "web", name: "Web", hostname: "example.test", environment: "Test", owner };
+  const lookup = () => {};
+  const connectImpl = (options) => {
+    assert.equal(options.lookup, lookup);
+    return fakeTls()();
+  };
   validateCertificates([certificate]);
-  const result = await checkCertificate(certificate, { connectImpl: fakeTls() });
+  const result = await checkCertificate(certificate, { connectImpl, lookup });
   assert.equal(result.status, "up");
   assert.equal(result.issuer, "Test CA");
   assert.deepEqual(result.owner, owner);

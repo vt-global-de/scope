@@ -19,6 +19,7 @@ test("posts a test notification to a Discord webhook", async () => {
   assert.equal(request.url, "https://discord.com/api/webhooks/1/token");
   assert.equal(request.options.method, "POST");
   const payload = JSON.parse(request.options.body);
+  assert.equal(payload.content, "Scope test");
   assert.deepEqual(payload.embeds[0].title, "Scope test");
   assert.deepEqual(payload.allowed_mentions, { parse: [] });
 });
@@ -35,6 +36,7 @@ test("builds red outage and green recovery presentations", () => {
 
   assert.equal(outage.discord.color, 0xe5484d);
   assert.match(outage.discord.title, /🔴.*DOWN/);
+  assert.equal(outage.subject, "🔴 [Scope] DOWN · Git");
   assert.match(outage.html, /#e5484d/);
   assert.match(outage.html, /cid:scope-notification-icon/);
   assert.match(outage.html, /https:\/\/scope\.example\.test/);
@@ -76,6 +78,7 @@ test("attaches the Scope icon to branded Discord embeds", async () => {
   assert.equal(request.options.headers, undefined);
   assert.ok(request.options.body instanceof FormData);
   const payload = JSON.parse(request.options.body.get("payload_json"));
+  assert.equal(payload.content, "🔴 [Scope] DOWN · Git");
   assert.equal(payload.embeds[0].thumbnail.url, "attachment://scope-notification-icon.png");
   assert.equal(payload.embeds[0].url, "https://scope.example.test");
   const icon = request.options.body.get("files[0]");

@@ -3190,6 +3190,15 @@ async function loadDiscoveryProposals({ forceRender = false } = {}) {
   renderDiscoveryProposals(result, { force: forceRender });
 }
 
+async function loadDiscoveryProposalCount() {
+  if (!appCapabilities.inventory) return;
+  const response = await fetch("/api/admin/discovery-proposal-count", { cache: "no-store" });
+  if (!response.ok) return;
+  const pending = Number((await response.json()).pending) || 0;
+  serviceInboxCount.textContent = String(pending);
+  serviceInboxCount.hidden = pending === 0;
+}
+
 function selectAdminTab(name) {
   const panes = { users: adminUsersPane, audit: adminAuditPane };
   const selected = panes[name] ? name : "users";
@@ -3321,7 +3330,7 @@ async function loadPersonalPreferences() {
     serviceInboxButton.hidden = !(isAdmin && appCapabilities.inventory);
     if (isAdmin) selectAdminTab("users");
     adminNavLink.hidden = !isAdmin;
-    if (isAdmin && appCapabilities.inventory) loadDiscoveryProposals().catch(() => {});
+    if (isAdmin && appCapabilities.inventory) loadDiscoveryProposalCount().catch(() => {});
     syncSettingsControls();
   } catch { /* Scope remains usable if preferences are temporarily unavailable. */ }
 }
@@ -3518,7 +3527,7 @@ async function loadMeta() {
       serviceInboxButton.hidden = meta.authenticationRequired || !appCapabilities.inventory;
       adminNavLink.hidden = true;
       settingsButton.hidden = !meta.authenticationRequired;
-      if (!meta.authenticationRequired && appCapabilities.inventory) loadDiscoveryProposals().catch(() => {});
+      if (!meta.authenticationRequired && appCapabilities.inventory) loadDiscoveryProposalCount().catch(() => {});
       rerenderLocalizedContent();
       renderOverview();
     }
@@ -3541,6 +3550,16 @@ await loadPersonalPreferences();
 await Promise.all([loadDashboard(), loadRemoteConnections()]);
 renderRoute();
 await Promise.all([loadStatuses(), loadRemoteStatuses(), loadMonitoring(), loadCertificates(), loadDns(), loadNotifications(), loadHistory()]);
-setInterval(() => {
-  loadStatuses(); loadRemoteStatuses(); loadMonitoring(); loadCertificates(); loadDns(); loadNotifications(); loadHistory();
-}, 60000);
+let dashboardRefresh;
+async function refreshVisibleDashboard() {
+  if (document.hidden || dashboardRefresh) return dashboardRefresh;
+  dashboardRefresh = Promise.all([
+    loadStatuses(), loadRemoteStatuses(), loadMonitoring(), loadCertificates(), loadDns(), loadNotifications(), loadHistory()
+  ]);
+  try { await dashboardRefresh; }
+  finally { dashboardRefresh = undefined; }
+}
+setInterval(refreshVisibleDashboard, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshVisibleDashboard();
+});

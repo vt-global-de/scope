@@ -14,14 +14,14 @@ export function remoteProbeTarget(connection, environment = process.env) {
   };
 }
 
-export async function checkRemoteConnection(connection, { timeoutMs = 3000, environment = process.env, connectImpl = connect } = {}) {
+export async function checkRemoteConnection(connection, { timeoutMs = 3000, environment = process.env, connectImpl = connect, lookup } = {}) {
   const { hostname, port } = remoteProbeTarget(connection, environment);
   if (!hostname || !Number.isInteger(port) || port < 1 || port > 65535) {
     return { id: connection.id, name: connection.name, protocol: connection.protocol, status: "down", code: "invalid_target", detail: "Hostname oder Port ungültig" };
   }
 
   return new Promise((resolve) => {
-    const socket = connectImpl({ host: hostname, port });
+    const socket = connectImpl({ host: hostname, port, ...(lookup ? { lookup } : {}) });
     let finished = false;
     let response = Buffer.alloc(0);
     const finish = (status, detail, code) => {
@@ -72,7 +72,7 @@ export async function checkRemoteConnection(connection, { timeoutMs = 3000, envi
 }
 
 export function createRemoteStatusChecker(getRemoteConfig, options = {}) {
-  const ttlMs = options.ttlMs ?? 30000;
+  const ttlMs = options.ttlMs ?? 60000;
   let cachedResults;
   let cachedAt = 0;
   let cachedSignature = "";

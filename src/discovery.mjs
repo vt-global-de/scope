@@ -28,13 +28,13 @@ function endpoint(base, path) {
   return url;
 }
 
-export function jsonRequest(url, { timeoutMs = 5000, token, tokenPrefix = "Bearer ", rejectUnauthorized = true, requestImpl } = {}) {
+export function jsonRequest(url, { timeoutMs = 5000, token, tokenPrefix = "Bearer ", rejectUnauthorized = true, requestImpl, lookup } = {}) {
   const parsed = typeof url === "string" ? new URL(url) : url;
   const implementation = requestImpl ?? (parsed.protocol === "https:" ? httpsRequest : httpRequest);
   const headers = { Accept: "application/json", "User-Agent": "Scope/1.1 discovery" };
   if (token) headers.Authorization = `${tokenPrefix}${token}`;
   return new Promise((resolve, reject) => {
-    const request = implementation(parsed, { headers, ...(parsed.protocol === "https:" ? { rejectUnauthorized } : {}) }, (response) => {
+    const request = implementation(parsed, { headers, ...(lookup ? { lookup } : {}), ...(parsed.protocol === "https:" ? { rejectUnauthorized } : {}) }, (response) => {
       const chunks = [];
       let length = 0;
       response.on("data", (chunk) => {
@@ -142,7 +142,8 @@ async function discoverDocker(provider, inventory, options) {
   if (!rawHost) throw new Error(`Docker server ${provider.server} is not configured or enabled.`);
   const host = resolveMonitoringHost(rawHost);
   const containers = await (options.dockerRequest ?? dockerApiRequest)(host.connection, "/containers/json?all=1", {
-    timeoutMs: provider["timeout-ms"] ?? options.timeoutMs
+    timeoutMs: provider["timeout-ms"] ?? options.timeoutMs,
+    lookup: options.lookup
   });
   return {
     targets: containers.map((container) => ({
@@ -166,7 +167,8 @@ async function discoverReverseProxy(provider, environment, options) {
     token,
     tokenPrefix: provider["token-prefix"] ?? "Bearer ",
     rejectUnauthorized: provider["reject-unauthorized"] !== false,
-    requestImpl: options.requestImpl
+    requestImpl: options.requestImpl,
+    lookup: options.lookup
   };
   const get = options.jsonRequest ?? jsonRequest;
   const adapters = {
@@ -324,17 +326,20 @@ export function buildProviderInventory(inventory, snapshots, drift) {
 }
 
 export function createDiscoveryManager(getInventory, options = {}) {
-  const ttlMs = options.ttlMs ?? 60000;
+  const ttlMs = options.ttlMs ?? 300000;
   const environment = options.environment ?? process.env;
   let cache;
   let cachedAt = 0;
   let signature = "";
+  let pending;
   return async function getDiscovery({ refresh = false } = {}) {
     const inventory = await getInventory();
     const providers = inventory.discovery?.enabled === false ? [] : (inventory.discovery?.providers ?? []).filter((item) => item.enabled !== false);
     const nextSignature = JSON.stringify(providers);
     if (!refresh && cache && signature === nextSignature && Date.now() - cachedAt < ttlMs) return cache;
-    const snapshots = await Promise.all(providers.map(async (provider) => {
+    if (pending && signature === nextSignature) return pending;
+    signature = nextSignature;
+    const current = Promise.all(providers.map(async (provider) => {
       const publicProvider = {
         id: provider.id, name: provider.name ?? provider.id, type: provider.type,
         ...(provider.driver ? { driver: provider.driver } : {}),
@@ -350,20 +355,26 @@ export function createDiscoveryManager(getInventory, options = {}) {
       } catch (error) {
         return { provider: publicProvider, checkedAt: new Date().toISOString(), status: "down", error: cleanError(error), targets: [], routes: [] };
       }
-    }));
-    const servers = toServersConfig(inventory).servers.map((server) => ({
-      id: server.id,
-      name: server.name,
-      monitoring: server.monitoring?.type ?? (server.monitoring ? "docker" : null),
-      remote: server.remote?.protocol ?? null
-    }));
-    const drift = calculateDrift(inventory, snapshots);
-    cache = {
-      checkedAt: new Date().toISOString(), snapshots, servers, drift,
-      providerInventory: buildProviderInventory(inventory, snapshots, drift)
-    };
-    cachedAt = Date.now();
-    signature = nextSignature;
-    return cache;
+    })).then((snapshots) => {
+      const servers = toServersConfig(inventory).servers.map((server) => ({
+        id: server.id,
+        name: server.name,
+        monitoring: server.monitoring?.type ?? (server.monitoring ? "docker" : null),
+        remote: server.remote?.protocol ?? null
+      }));
+      const drift = calculateDrift(inventory, snapshots);
+      const result = {
+        checkedAt: new Date().toISOString(), snapshots, servers, drift,
+        providerInventory: buildProviderInventory(inventory, snapshots, drift)
+      };
+      if (signature === nextSignature) { cache = result; cachedAt = Date.now(); }
+      return result;
+    });
+    pending = current;
+    try {
+      return await current;
+    } finally {
+      if (pending === current) pending = undefined;
+    }
   };
 }

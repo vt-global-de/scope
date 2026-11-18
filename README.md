@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Release 1.1.0" src="https://img.shields.io/badge/release-1.1.0-40c4cf?style=flat-square">
+  <img alt="Release 1.1.1" src="https://img.shields.io/badge/release-1.1.1-40c4cf?style=flat-square">
   <img alt="AGPL-3.0-or-later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-7658b5?style=flat-square">
   <img alt="YAML inventory" src="https://img.shields.io/badge/inventory-YAML-cb8f2e?style=flat-square">
   <img alt="Docker amd64 and arm64" src="https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ed?style=flat-square">
@@ -63,6 +63,20 @@ flowchart LR
 
 Scope is self-hosted and read-first. It does not use an external remote gateway, and remote credentials are never persisted in PostgreSQL.
 
+## Scope in operation
+
+These are real Scope views captured from a neutral local demo and an operational deployment. Select an image to open it at full size.
+
+| Services | Docker host |
+| :---: | :---: |
+| [![Scope Services view with grouped applications and live health](docs/assets/screenshots/services-overview.png)](docs/assets/screenshots/services-overview.png) | [![Scope server view with a healthy Docker host and resource metrics](docs/assets/screenshots/docker-host.png)](docs/assets/screenshots/docker-host.png) |
+| **Searchable service inventory** | **Host and Docker context** |
+
+| SSH session | Service Inbox |
+| :---: | :---: |
+| [![Browser-based SSH session inside Scope](docs/assets/screenshots/ssh-session.png)](docs/assets/screenshots/ssh-session.png) | [![Scope Service Inbox showing Docker and reverse-proxy providers](docs/assets/screenshots/service-inbox.png)](docs/assets/screenshots/service-inbox.png) |
+| **Remote access in context** | **Reviewed, provider-neutral discovery** |
+
 ## Quick start
 
 Requirements: Docker Engine with Compose and a local checkout of this repository.
@@ -79,7 +93,7 @@ docker compose ps
 docker compose logs -f scope
 ```
 
-The example stack uses the immutable `ghcr.io/vt-global-de/scope:1.1.0` image. Build the image locally only when developing Scope itself:
+The example stack uses the immutable `ghcr.io/vt-global-de/scope:1.1.1` image. Build the image locally only when developing Scope itself:
 
 ```sh
 docker build -t scope:local .
@@ -165,29 +179,41 @@ The application container owns the WebUI, API, checks and remote-session lifecyc
 Scope has two deliberate product generations: **1.x helps operators see and reach their infrastructure; 2.x will help them understand failures and respond with context.** YAML remains authoritative across both.
 
 ```mermaid
-flowchart LR
-    v10["1.0<br/>Operational foundation<br/>SHIPPED"] --> v11["1.1<br/>Discovery<br/>SHIPPED"]
-    v11 --> v12["1.2<br/>Secure reach<br/>NEXT"]
-    v12 --> v13["1.3<br/>Operational integrations<br/>PLANNED"]
-    v13 --> v20["2.0<br/>Infrastructure intelligence<br/>DIRECTION"]
+flowchart TB
+    subgraph v1[Scope 1.x · See and reach]
+      direction LR
+      v10["1.0<br/>Foundation<br/>SHIPPED"] --> v11["1.1<br/>Discovery<br/>SHIPPED"]
+      v11 --> v111["1.1.1<br/>Stability<br/>SHIPPED"] --> v12["1.2<br/>Secure reach<br/>FOLLOWS"]
+      v12 --> v13["1.3<br/>Identity & access<br/>PLANNED"] --> v14["1.4<br/>Alerting & operations<br/>PLANNED"]
+    end
+    subgraph v2[Scope 2.x · Understand and respond]
+      direction LR
+      v20["2.0<br/>Intelligence<br/>DIRECTION"] --> v21["2.1<br/>Guided response<br/>DIRECTION"]
+      v21 --> v22["2.2<br/>Infrastructure sources<br/>DIRECTION"] --> v23["2.3<br/>Controlled remediation<br/>EXPLORATION"]
+    end
+    v14 --> v20
 
     classDef shipped fill:#123c33,stroke:#10a474,color:#e7eff1,stroke-width:2px;
     classDef next fill:#10343a,stroke:#40c4cf,color:#e7eff1,stroke-width:2px;
     classDef planned fill:#25222f,stroke:#7658b5,color:#e7eff1;
-    class v10,v11 shipped;
-    class v12 next;
-    class v13,v20 planned;
+    class v10,v11,v111 shipped;
+    class v12,v13,v14,v20,v21,v22,v23 planned;
 ```
 
 | Release | Direction | Selected outcomes |
 | --- | --- | --- |
 | **1.0 · Shipped** | Operational foundation | Inventory v1, monitoring, remote sessions, history, notifications and metrics. |
 | **1.1 · Shipped** | Discovery | Provider-neutral discovery, a config-driven Service Inbox and guided connection troubleshooting. |
-| **1.2 · Next** | Secure reach | Outbound-only Scope Agent, multi-zone checks and least-privilege enrollment. |
-| **1.3 · Planned** | Operational integrations | External identity, advanced alert routing, webhooks, Grafana assets and operational hardening. |
-| **2.0 · Direction** | Infrastructure intelligence | Topology, incident correlation, blast radius, runbooks and evidence-backed troubleshooting paths. |
+| **1.1.1 · Shipped** | Stability and efficiency | Responsive smartphone/tablet operation, informative Discord pushes, shared DNS caching, coalesced probes and demand-driven refreshes. |
+| **1.2 · Follows** | Secure reach | Optional outbound-only Scope Agent, multi-zone checks and least-privilege enrollment while agentless operation remains fully supported. |
+| **1.3 · Planned** | Identity and access | OIDC, LDAP, local MFA, granular permissions, session controls and external group mapping. |
+| **1.4 · Planned** | Alerting and operations | Alert routing, webhooks, cooldowns, escalation, digests, Grafana assets and operational diagnostics. |
+| **2.0 · Direction** | Infrastructure intelligence | Typed topology, explainable incident correlation, blast radius, symptom suppression, runbooks and evidence-backed troubleshooting paths. |
+| **2.1 · Direction** | Guided response | Incident ownership, versionable runbooks, structured diagnostics, context links and resolution history. |
+| **2.2 · Direction** | Infrastructure sources | Swarm, Kubernetes and provider-neutral monitoring, storage and network integrations with visible provenance. |
+| **2.3 · Exploration** | Controlled remediation | Explicitly permitted, approved and audited actions without arbitrary remote execution. |
 
-The roadmap communicates direction, not release dates. Read the [full roadmap and product guardrails](ROADMAP.md).
+The roadmap communicates direction, not release dates. Its published items describe the AGPL-licensed Community edition unless explicitly labeled otherwise before implementation. Read the [full roadmap and product guardrails](ROADMAP.md).
 
 ## Documentation
 

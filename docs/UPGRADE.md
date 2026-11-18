@@ -21,6 +21,10 @@ Scope applies forward-only, transactional database migrations before accepting t
 
 Scope 1.1.0 keeps inventory schema version 1 and does not require Discovery to be configured. Database migrations 3–5 add Discovery snapshots and proposal decisions; they are applied automatically and transactionally. Back up PostgreSQL before the first 1.1.0 start. Existing services, users, history, notification delivery state and personal layouts remain unchanged. Add `discovery.providers` only when the Service Inbox should be enabled.
 
+### From 1.1.0 to 1.1.1
+
+Scope 1.1.1 is a compatible stability release. It keeps inventory schema version 1, adds no database migration and introduces no mandatory configuration. Existing cache environment variables remain optional; the updated defaults reduce background DNS and provider traffic.
+
 Never roll an older Scope image back against a database that has already been migrated unless the release notes explicitly permit it. Restore the pre-upgrade database dump for a full rollback.
 
 ## Restore

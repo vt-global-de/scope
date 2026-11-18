@@ -20,7 +20,7 @@ export function validateCertificates(certificates) {
   return certificates;
 }
 
-export function checkCertificate(certificate, { timeoutMs = 5000, connectImpl = tlsConnect } = {}) {
+export function checkCertificate(certificate, { timeoutMs = 5000, connectImpl = tlsConnect, lookup } = {}) {
   return new Promise((resolve) => {
     const checkedAt = new Date().toISOString();
     let settled = false;
@@ -43,6 +43,7 @@ export function checkCertificate(certificate, { timeoutMs = 5000, connectImpl = 
       host: certificate.hostname,
       port: Number(certificate.port ?? 443),
       servername: certificate["server-name"] ?? certificate.hostname,
+      ...(lookup ? { lookup } : {}),
       rejectUnauthorized: false
     });
     socket.setTimeout(timeoutMs, () => finish({ status: "down", detail: "TLS-Zeitüberschreitung" }));
@@ -71,18 +72,26 @@ export function checkCertificate(certificate, { timeoutMs = 5000, connectImpl = 
 }
 
 export function createCertificateChecker(getCertificates, options = {}) {
-  const ttlMs = options.ttlMs ?? 30000;
+  const ttlMs = options.ttlMs ?? 3600000;
   let cache;
   let cachedAt = 0;
   let signature = "";
+  let pending;
   return async function getCertificateStatuses() {
     const certificates = await getCertificates();
     const nextSignature = JSON.stringify(certificates);
     if (cache && signature === nextSignature && Date.now() - cachedAt < ttlMs) return cache;
+    if (pending && signature === nextSignature) return pending;
     signature = nextSignature;
-    cache = await mapWithConcurrency(certificates, options.concurrency ?? 8,
+    const current = mapWithConcurrency(certificates, options.concurrency ?? 8,
       (certificate) => checkCertificate(certificate, options));
-    cachedAt = Date.now();
-    return cache;
+    pending = current;
+    try {
+      const result = await current;
+      if (signature === nextSignature) { cache = result; cachedAt = Date.now(); }
+      return result;
+    } finally {
+      if (pending === current) pending = undefined;
+    }
   };
 }

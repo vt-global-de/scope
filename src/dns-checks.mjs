@@ -58,17 +58,25 @@ export async function checkDns(check, { timeoutMs = 4000, resolverFactory = () =
 }
 
 export function createDnsChecker(getChecks, options = {}) {
-  const ttlMs = options.ttlMs ?? 30000;
+  const ttlMs = options.ttlMs ?? 300000;
   let cache;
   let cachedAt = 0;
   let signature = "";
+  let pending;
   return async function getDnsStatuses() {
     const checks = await getChecks();
     const nextSignature = JSON.stringify(checks);
     if (cache && signature === nextSignature && Date.now() - cachedAt < ttlMs) return cache;
+    if (pending && signature === nextSignature) return pending;
     signature = nextSignature;
-    cache = await mapWithConcurrency(checks, options.concurrency ?? 8, (check) => checkDns(check, options));
-    cachedAt = Date.now();
-    return cache;
+    const current = mapWithConcurrency(checks, options.concurrency ?? 8, (check) => checkDns(check, options));
+    pending = current;
+    try {
+      const result = await current;
+      if (signature === nextSignature) { cache = result; cachedAt = Date.now(); }
+      return result;
+    } finally {
+      if (pending === current) pending = undefined;
+    }
   };
 }

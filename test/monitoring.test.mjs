@@ -49,6 +49,7 @@ test("connects through a Unix socket", async () => {
 });
 
 test("connects through configurable TLS", async () => {
+  const lookup = () => {};
   await dockerApiRequest(
     { type: "tls", hostname: "docker.internal", port: 2375, "reject-unauthorized": false },
     "/info",
@@ -56,7 +57,8 @@ test("connects through configurable TLS", async () => {
       assert.equal(options.hostname, "docker.internal");
       assert.equal(options.port, 2375);
       assert.equal(options.rejectUnauthorized, false);
-    }) }
+      assert.equal(options.lookup, lookup);
+    }), lookup }
   );
 });
 

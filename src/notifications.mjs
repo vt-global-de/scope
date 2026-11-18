@@ -263,8 +263,13 @@ export async function sendDiscord(channel, message, fetchImpl = fetch) {
   if (presentation.url) embed.url = presentation.url;
   if (presentation.author) embed.author = presentation.author;
   if (presentation.thumbnail) embed.thumbnail = { url: presentation.thumbnail };
+  const pushText = presentation.content
+    || message.subject
+    || String(message.text ?? "").split(/\r?\n/, 1)[0]
+    || "Scope notification";
   const payload = {
     username: truncate(message.appName || "Scope", 80),
+    content: truncate(pushText, 2000),
     allowed_mentions: { parse: [] },
     embeds: [embed]
   };

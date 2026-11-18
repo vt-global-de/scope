@@ -5,13 +5,6 @@ on:
     tags:
       - "v*.*.*"
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
-
 concurrency:
   group: container-release-${{ github.ref }}
   cancel-in-progress: false
@@ -25,6 +18,12 @@ jobs:
     name: Publish multi-platform image
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -82,3 +81,42 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+  release:
+    name: Publish GitHub Release
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v heading="## $VERSION" '
+            $0 == heading || index($0, heading " - ") == 1 { capture=1; next }
+            capture && /^## / { exit }
+            capture { print }
+            END { if (!capture) exit 2 }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "GitHub Release $GITHUB_REF_NAME already exists; leaving it unchanged."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "Scope ${GITHUB_REF_NAME#v}" \
+              --notes-file release-notes.md
+          fi

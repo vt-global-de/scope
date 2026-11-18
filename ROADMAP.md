@@ -30,23 +30,52 @@ Goal: make Scope easier to adopt and troubleshoot without replacing configuratio
 - Review services as pending, accepted or rejected, revise decisions at any time, and export the result for Git-managed deployment.
 - Improve connection troubleshooting for Docker, SSH, RDP, HTTP, DNS and TLS with readable steps and next actions.
 
+## 1.1.1 — Stability and efficiency · Shipped
+
+Goal: harden the 1.1 release for everyday use before the next feature milestone.
+
+- Restore intentional smartphone and tablet layouts instead of scaling down the desktop dashboard.
+- Keep page titles, navigation, profile actions, layout controls, dialogs and remote sessions usable within small viewports.
+- Give smartphones a touch-friendly bottom navigation while retaining compact, recognizable navigation on tablets.
+- Add informative Discord webhook content so push notifications identify Scope, the affected target and its state instead of reporting only an image attachment.
+- Keep the existing descriptive email subject, text and HTML notification content unchanged and covered by delivery tests.
+- Reduce DNS traffic with shared hostname resolution, bounded caching and single-flight lookups across concurrent checks.
+- Separate cache intervals for service status, remote reachability, Docker monitoring, DNS records, TLS certificates and Discovery results.
+- Pause browser polling while Scope is hidden and refresh stale data when the page becomes visible again.
+- Run provider Discovery on demand instead of continuously polling infrastructure that is not currently being reviewed.
+
+This patch keeps **inventory schema version 1**, requires no database migration and introduces no new mandatory configuration. Existing cache variables remain optional tuning controls; updated defaults favor lower background traffic.
+
 ## 1.2 — Secure reach · Next
 
-Goal: collect useful operational signals across network zones without broadly exposing management APIs.
+Goal: optionally collect useful operational signals across network zones without broadly exposing management APIs.
 
-- Small Scope Agent with an outbound-only connection to the Scope server.
-- Host, Docker and selected system-service signals.
-- HTTP, TCP, DNS and network checks from multiple points of view.
-- Least-privilege enrollment, rotation and revocation.
-- Preserve direct socket and TLS connections for environments that do not need an agent.
-- Evaluate secure remote-session transport without weakening network boundaries.
+- Add a small, optional Scope Agent with an outbound-only authenticated connection to the Scope server and no required inbound management port.
+- Preserve the current agentless server checks, direct Docker socket and Docker TLS connections as fully supported operating modes.
+- Allow direct and agent-assisted targets in the same installation so each network zone can use the simplest suitable connection model.
+- Collect HTTP, TCP, DNS and TLS results from explicitly selected points of view.
+- Collect optional host, Docker and selected system-service signals under capability-based least privilege.
+- Enroll agents with a one-time credential, then support identity rotation, revocation, protocol-version negotiation and audit events.
+- Distinguish an unavailable agent from an unavailable monitored target and buffer a bounded amount of data during short disconnects.
+- Do not add arbitrary shell execution, automatic remediation or mandatory remote-session tunneling to the first agent release.
 
-## 1.3 — Operational integrations · Planned
+An agent is required only for checks or local signals that explicitly run through that agent. Standard dashboards, centralized checks, direct Docker monitoring, notifications and remote sessions remain usable without one.
 
-Goal: finish the v1 foundation around identity, delivery and observability before introducing the v2 incident model.
+## 1.3 — Identity and access · Planned
+
+Goal: integrate Scope with established identity systems and make access policy clearer as installations grow.
 
 - OIDC and LDAP integration with a documented external-authentication model.
 - Stronger multi-factor authentication options for local accounts.
+- More granular permissions for administration, remote access, Discovery, agents and notification operations.
+- Session visibility, revocation and clearer login history.
+- Map external groups to Scope roles without turning the external identity provider into a hard dependency for local recovery.
+- Apply the same auditable authorization model to direct and agent-assisted operations.
+
+## 1.4 — Alerting and operations · Planned
+
+Goal: complete the operational v1 foundation before introducing the v2 incident model.
+
 - Generic webhook notification channels and clearer delivery policies.
 - Route notification rules by target type, group and tags, with explicit severity levels.
 - Add cooldowns, escalation intervals, configurable recovery behavior and daily or weekly digests.
@@ -106,19 +135,50 @@ Scope 2.0 is ready only when an operator can move through one coherent workflow:
 
 The richer relationship model may require **inventory schema version 2**. Any migration must be documented, validated and accompanied by a conversion path from inventory v1.
 
-## After 2.0, based on evidence
+## 2.1 — Guided response · Direction
 
-- Guided and permission-controlled remediation actions.
-- Docker Swarm and Kubernetes topology sources.
-- Additional incident providers and external ticketing integrations.
-- A supported extension model for infrastructure sources, relationship types and diagnostic providers.
+Goal: turn the 2.0 incident model into a repeatable operator workflow without hiding decisions or changing infrastructure automatically.
+
+- Acknowledge incidents and record ownership, notes and resolution summaries.
+- Store versionable Markdown runbooks and associate them with targets, relationships and incident patterns.
+- Present ordered, read-only diagnostic steps with captured evidence and explicit completion state.
+- Link directly to the relevant Scope remote session, logs, metrics and management interface.
+- Retain a coherent investigation timeline without attempting to replace a full ticketing platform.
+
+## 2.2 — Infrastructure sources · Direction
+
+Goal: expand the topology and incident model through a supported, provider-neutral source contract.
+
+- Add Docker Swarm and Kubernetes as optional topology and event sources.
+- Integrate selected monitoring, storage and network sources without making any single vendor mandatory.
+- Define a supported extension model for source capabilities, relationship types, health evidence and diagnostics.
+- Display provenance and freshness for every discovered fact so declared intent and observed evidence remain distinguishable.
+- Add external ticketing and incident-provider integrations only where they complement Scope's own workflow.
+
+## 2.3 — Controlled remediation · Exploration
+
+Goal: evaluate narrowly scoped operator-approved actions after Scope can already explain cause, impact and evidence reliably.
+
+- Permit only explicitly configured actions with clear target, permission and impact boundaries.
+- Require confirmation and optionally approval before an action changes infrastructure.
+- Show the intended action, expected impact and rollback guidance before execution.
+- Record requester, approver, result and emitted evidence in the audit and incident timelines.
+- Start with constrained actions such as restarting an explicitly allowed container or service; never expose arbitrary shell execution.
+- Keep remediation optional. Scope remains valuable as a read-first platform when all write capabilities are disabled.
+
+## Beyond 2.3, based on evidence
+
 - Team and governance capabilities only after real community demand is understood.
+- Additional infrastructure sources based on maintained integrations rather than feature-count pressure.
+- Broader automation only after the permission, approval and rollback model has proven safe in real deployments.
 
 ## Product guardrails
 
 - **Inventory stays authoritative.** Discovery proposes and annotates; it does not silently rewrite intent.
 - **Evidence before certainty.** Scope may show a probable cause, but it must expose why it reached that conclusion.
 - **Read-first operations.** Scope explains and connects before it attempts to change infrastructure.
+- **Agents remain optional.** Direct and agent-assisted operation can coexist; ordinary Scope use never requires an agent.
+- **The public roadmap describes Community.** Every item in this document is planned for the AGPL-licensed Community edition unless it is explicitly labeled otherwise before implementation begins.
 - **Context over feature count.** New work should clarify relationships or reduce incident effort.
 - **Self-hosting remains complete.** Core infrastructure visibility and incident context must not depend on an external service.
 - **Roadmap is not availability.** Planned and directional work is never marketed as shipped.

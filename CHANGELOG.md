@@ -4,6 +4,13 @@ All notable changes to Scope are documented here. Versions follow semantic versi
 
 ## Unreleased
 
+## 1.1.1 - 2026-11-18
+
+- Fixed smartphone and tablet layouts with compact tablet navigation, a touch-friendly mobile bottom bar, collision-free header controls, responsive editing controls and viewport-fitted dialogs and remote sessions.
+- Kept host and Docker statistics stacked on XS, S and M server cards even when a wide panel gives those cards enough physical space to trigger the L/Full composition.
+- Added informative Discord notification text so mobile push alerts identify the affected Scope target instead of only reporting an image attachment.
+- Reduced DNS and probe traffic with shared hostname caching, single-flight checks, workload-specific cache intervals, visibility-aware browser refreshes and on-demand Discovery scans.
+
 ## 1.1.0 - 2026-11-10
 
 - Added an administrator-only Service Inbox directly to the Services workspace for reviewing discovered routes.

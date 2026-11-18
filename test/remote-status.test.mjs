@@ -13,7 +13,9 @@ test("reports an accepting TCP target as up", async () => {
   const socket = new EventEmitter();
   socket.setTimeout = () => {};
   socket.destroy = () => {};
-  const connectImpl = () => {
+  const lookup = () => {};
+  const connectImpl = (options) => {
+    assert.equal(options.lookup, lookup);
     queueMicrotask(() => socket.emit("connect"));
     return socket;
   };
@@ -21,7 +23,7 @@ test("reports an accepting TCP target as up", async () => {
     id: "local",
     protocol: "ssh",
     parameters: { hostname: "127.0.0.1", port: "22" }
-  }, { connectImpl });
+  }, { connectImpl, lookup });
   assert.equal(result.status, "up");
 });
 

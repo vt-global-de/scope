@@ -23,18 +23,19 @@ export function classifyHttpStatus(httpStatus) {
   return "down";
 }
 
-function nativeRequest(url, method, timeoutMs, rejectUnauthorized, followRedirects, remainingRedirects = 5) {
+function nativeRequest(url, method, timeoutMs, rejectUnauthorized, followRedirects, lookup, remainingRedirects = 5) {
   return new Promise((resolve, reject) => {
     const requestImpl = url.protocol === "https:" ? httpsRequest : httpRequest;
     const request = requestImpl(url, {
       method,
       headers: { "User-Agent": "Scope/1.0 status-check" },
+      ...(lookup ? { lookup } : {}),
       ...(url.protocol === "https:" ? { rejectUnauthorized } : {})
     }, (response) => {
       if (followRedirects && remainingRedirects > 0 && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
         const redirected = new URL(response.headers.location, url);
-        nativeRequest(redirected, method, timeoutMs, rejectUnauthorized, true, remainingRedirects - 1).then(resolve, reject);
+        nativeRequest(redirected, method, timeoutMs, rejectUnauthorized, true, lookup, remainingRedirects - 1).then(resolve, reject);
         return;
       }
       response.resume();
@@ -50,8 +51,8 @@ function nativeRequest(url, method, timeoutMs, rejectUnauthorized, followRedirec
   });
 }
 
-async function request(url, method, fetchImpl, timeoutMs, rejectUnauthorized, followRedirects) {
-  if (!fetchImpl) return nativeRequest(url, method, timeoutMs, rejectUnauthorized, followRedirects);
+async function request(url, method, fetchImpl, timeoutMs, rejectUnauthorized, followRedirects, lookup) {
+  if (!fetchImpl) return nativeRequest(url, method, timeoutMs, rejectUnauthorized, followRedirects, lookup);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -71,7 +72,7 @@ async function request(url, method, fetchImpl, timeoutMs, rejectUnauthorized, fo
 }
 
 export async function checkUrl(value, {
-  fetchImpl, timeoutMs = 4000, rejectUnauthorized = true, method, expectedStatuses, followRedirects = false
+  fetchImpl, timeoutMs = 4000, rejectUnauthorized = true, method, expectedStatuses, followRedirects = false, lookup
 } = {}) {
   const url = parseHttpUrl(value);
   if (!url) {
@@ -80,9 +81,9 @@ export async function checkUrl(value, {
 
   try {
     const started = performance.now();
-    let response = await request(url, method ?? "HEAD", fetchImpl, timeoutMs, rejectUnauthorized, followRedirects);
+    let response = await request(url, method ?? "HEAD", fetchImpl, timeoutMs, rejectUnauthorized, followRedirects, lookup);
     if (!method && classifyHttpStatus(response.status) === "down") {
-      response = await request(url, "GET", fetchImpl, timeoutMs, rejectUnauthorized, followRedirects);
+      response = await request(url, "GET", fetchImpl, timeoutMs, rejectUnauthorized, followRedirects, lookup);
     }
     const status = expectedStatuses?.length
       ? (expectedStatuses.includes(response.status) ? "up" : "down")
@@ -104,7 +105,7 @@ export async function checkUrl(value, {
 }
 
 export function createStatusChecker(getConfig, options = {}) {
-  const ttlMs = options.ttlMs ?? 30000;
+  const ttlMs = options.ttlMs ?? 60000;
   let cachedResults;
   let cachedAt = 0;
   let cachedSignature = "";
